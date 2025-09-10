@@ -5,10 +5,10 @@ import dotenv from "dotenv";
 import { createServer } from "http";
 import { Server } from "socket.io";
 
-// Import routes - FIXED: correct import paths
+// Import routes
 import authRoutes from "./routes/auth.routes";
 import touristRoutes from "./routes/tourist.routes";
-import kycRoutes from "./routes/kyc.routes"; // FIXED: removed "Routes" from filename
+import kycRoutes from "./routes/kyc.routes";
 
 // Load environment variables
 dotenv.config();
@@ -32,7 +32,7 @@ io.on("connection", (socket) => {
   });
 });
 
-// CORS configuration - FIXED: define corsOptions or use direct config
+// CORS configuration
 const corsOptions = {
   origin: process.env.CORS_ORIGIN || ["http://localhost:3000", "http://localhost:5173"],
   credentials: true,
@@ -47,9 +47,9 @@ app.use(express.urlencoded({ extended: true, limit: "16kb" }));
 app.use(express.static("public"));
 app.use(cookieParser());
 
-// API Routes - FIXED: correct route paths
+// API Routes
 app.use("/api/auth", authRoutes);
-app.use("/api/tourist", touristRoutes); // FIXED: changed from "/api/tourists" to "/api/tourist"
+app.use("/api/tourist", touristRoutes);
 app.use("/api/kyc", kycRoutes);
 
 // Health check endpoint
@@ -61,7 +61,7 @@ app.get("/health", (req: Request, res: Response) => {
     environment: process.env.NODE_ENV || "development",
     routes: [
       "/api/auth",
-      "/api/tourist",
+      "/api/tourist", 
       "/api/kyc"
     ]
   });
@@ -123,7 +123,7 @@ app.use((error: any, req: Request, res: Response, next: NextFunction) => {
   });
 });
 
-// 404 handler - FIXED: Use app.use() instead of app.use("*")
+// 404 handler
 app.use((req: Request, res: Response) => {
   res.status(404).json({
     error: "Route not found",
@@ -138,6 +138,5 @@ app.use((req: Request, res: Response) => {
   });
 });
 
-// REMOVED: app.listen() - This should be handled in index.ts
-
+// Export using CommonJS syntax
 export { app, io, httpServer };

@@ -1,12 +1,12 @@
-export const html = (otp: string) => {
-
-    const currentDate: string = new Date().toLocaleDateString('en-US', {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.html = void 0;
+const html = (otp) => {
+    const currentDate = new Date().toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'long',
         day: 'numeric'
     });
-    
-
     return (`<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -319,6 +319,6 @@ export const html = (otp: string) => {
       </footer>
     </div>
   </body>
-</html>`
-    )
-}
+</html>`);
+};
+exports.html = html;

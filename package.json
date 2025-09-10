@@ -1,16 +1,21 @@
 {
   "name": "codearena",
-  "version": "1.0.0",
+  "version": "1.0.0", 
   "description": "",
   "license": "ISC",
   "author": "parikshit",
-  "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc",
-    "start": "node dist/src/index.js",
-    "render-start": "NODE_OPTIONS='--max-old-space-size=4096' npm run build && npm run start"
+    "start": "node dist/index.js",
+    "dev": "nodemon src/index.ts",
+    "build": "rimraf dist && tsc && npm run copy-abis",
+    "copy-abis": "node -e \"const fs = require('fs'); const path = require('path'); fs.mkdirSync('dist/abis', {recursive: true}); fs.copyFileSync('src/abis/Tourist.json', 'dist/abis/Tourist.json');\"",
+    "worker": "node dist/worker/onchainWorker.js",
+    "dev:worker": "nodemon src/worker/onchainWorker.ts",
+    "render-start": "npm run build && npm run start",
+    "clean": "rimraf dist",
+    "build:clean": "npm run clean && npm run build",
+    "debug": "ls -la dist/ && node -e \"console.log('Files in dist:'); require('fs').readdirSync('./dist').forEach(f => console.log('  -', f))\""
   },
   "dependencies": {
     "axios": "^1.8.4",
@@ -34,6 +39,7 @@
     "nodemailer": "^6.10.1",
     "nodemon": "^3.1.10",
     "resend": "^4.4.1",
+    "rimraf": "^3.0.2",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
@@ -55,5 +61,8 @@
     "ts-node-dev": "^2.0.0",
     "tsx": "^4.19.3",
     "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": "18.x"
   }
 }

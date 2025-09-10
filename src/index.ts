@@ -1,6 +1,6 @@
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
-import { app, httpServer } from './app';
+import { httpServer } from './app';
 import { onchainWorker } from './worker/onchainWorker';
 
 // Load environment variables first
