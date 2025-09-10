@@ -19,6 +19,7 @@ export interface IContestParticipation {
 export interface IContestModeration {
     contestId: mongoose.Types.ObjectId;
 }
+
 export interface IContestCreation {
     contestId: mongoose.Types.ObjectId;
 }
@@ -26,14 +27,6 @@ export interface IContestCreation {
 export interface IFollowers {
     userId: mongoose.Types.ObjectId;
     followedAt: Date;
-}
-
-declare global {
-  namespace Express {
-    interface Request {
-      user?: IUser;
-    }
-  }
 }
 
 export interface ISolvedProblem {
@@ -55,32 +48,18 @@ export interface IUserMethods {
     generateRefreshToken(): string;
 }
 
-export interface IUser extends mongoose.Document, IUserMethods {
-    username: string;
-    email: string;
-    password: string;
-    online: boolean;
-    role: 'admin' | 'participant';
-    profilePicture?: string; // Add this line for the profile picture field
-    profile?: IProfile;
-    followers: IFollowers[];
-    following: IFollowers[];
-    rating: number;
-    contestsParticipated: Array<{
-        contestId: mongoose.Types.ObjectId;
-        rank?: number;
-        score?: number;
-        contestProblems: Array<{
-            problemId: mongoose.Types.ObjectId;
-            score: number;
-            submissionTime: Date;
-            submissionStatus: "correct" | "wrong" | "partially correct";
-        }>;
-    }>;
-    contestsCreated: IContestCreation[];
-    contestsModerated: IContestModeration[];
-    solvedProblems: ISolvedProblem[];
-    refreshToken?: string;
-    createdAt: Date;
-    updatedAt: Date;
+// Simple IUser interface for tourist system
+export interface IUser extends mongoose.Document {
+  name: string;
+  email: string;
+  password: string;
+  profileCompleted?: boolean;
+  walletAddress?: string;
+  encryptedPrivateKey?: string;
+  walletGenerated?: boolean;
+  kycStatus?: "pending" | "verified" | "failed";
+  kycType?: "indian" | "international";
+  isAdmin?: boolean;
+  createdAt: Date;
+  updatedAt: Date;
 }
