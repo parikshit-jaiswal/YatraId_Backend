@@ -146,8 +146,8 @@ export const getTourist = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Tourist not found' });
     }
 
-    // Authorization check
-    if (tourist.userId.toString() !== req.user?._id.toString() && !req.user?.isAdmin) {
+    // Authorization check - allow access for the tourist owner
+    if (tourist.userId.toString() !== req.user?._id.toString()) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -343,10 +343,6 @@ export const updateSafetyScore = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { safetyLevel, factors, aiModelVersion } = req.body;
 
-    if (!req.user?.isAdmin) {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-
     const tourist = await Tourist.findById(id);
     if (!tourist) {
       return res.status(404).json({ error: 'Tourist not found' });
@@ -393,13 +389,9 @@ export const updateSafetyScore = async (req: Request, res: Response) => {
   }
 };
 
-// Get all tourists (admin/dashboard)
+// Get all tourists (dashboard)
 export const getAllTourists = async (req: Request, res: Response) => {
   try {
-    if (!req.user?.isAdmin) {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
     const skip = (page - 1) * limit;
@@ -701,3 +693,661 @@ function getLastSuccessfulTxHash(onchainTxs: any[]): string | null {
     
   return successfulTx?.txHash || null;
 }
+
+// ============= ADVANCED ADMIN FEATURES =============
+
+// Search tourists by Tourist ID or QR scan
+export const searchTouristById = async (req: Request, res: Response) => {
+  try {
+    const { query, searchType = 'touristId' } = req.query;
+
+    if (!query) {
+      return res.status(400).json({ error: 'Search query is required' });
+    }
+
+    let tourist;
+    let searchField = '';
+
+    switch (searchType) {
+      case 'touristId':
+        tourist = await Tourist.findOne({ touristId: query }).populate('userId', 'name email');
+        searchField = 'Tourist ID';
+        break;
+      case 'qrCode':
+        tourist = await Tourist.findOne({ qrCodeData: query }).populate('userId', 'name email');
+        searchField = 'QR Code';
+        break;
+      case 'phone':
+        tourist = await Tourist.findOne({ phoneNumber: query }).populate('userId', 'name email');
+        searchField = 'Phone Number';
+        break;
+      case 'walletAddress':
+        tourist = await Tourist.findOne({ ownerWallet: query }).populate('userId', 'name email');
+        searchField = 'Wallet Address';
+        break;
+      default:
+        return res.status(400).json({ error: 'Invalid search type' });
+    }
+
+    if (!tourist) {
+      return res.status(404).json({ 
+        error: `No tourist found with ${searchField}: ${query}` 
+      });
+    }
+
+    // Get location history from panic records
+    const locationHistory = tourist.panics?.map(panic => ({
+      location: panic.location,
+      timestamp: panic.timestamp,
+      type: 'panic'
+    })) || [];
+
+    // Calculate current status
+    const isActive = tourist.isActive && tourist.kyc.status === 'verified';
+    const hasActivePanics = tourist.panics?.some(p => 
+      p.onchainStatus === 'pending' || p.onchainStatus === 'submitted'
+    ) || false;
+
+    res.json({
+      success: true,
+      tourist: {
+        id: tourist._id,
+        touristId: tourist.touristId,
+        fullName: tourist.fullName,
+        phoneNumber: tourist.phoneNumber,
+        nationality: tourist.nationality,
+        profileImage: tourist.profileImage,
+        email: (tourist.userId as any).email,
+        ownerWallet: tourist.ownerWallet,
+        kycStatus: tourist.kyc.status,
+        kycMethod: tourist.kyc.method,
+        isActive,
+        validUntil: tourist.validUntil,
+        trackingOptIn: tourist.trackingOptIn,
+        panicCount: tourist.panics?.length || 0,
+        hasActivePanics,
+        locationHistory,
+        lastSeen: tourist.updatedAt,
+        createdAt: tourist.createdAt
+      }
+    });
+
+  } catch (error: any) {
+    console.error('Search tourist error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// Get heat map data for dashboard
+export const getHeatMapData = async (req: Request, res: Response) => {
+  try {
+    const { 
+      bounds, // { north, south, east, west }
+      dataType = 'all', // 'all', 'tourists', 'sos', 'help'
+      timeRange = '24h' // '1h', '24h', '7d', '30d'
+    } = req.query;
+
+    // Calculate time filter
+    const timeFilter = new Date();
+    switch (timeRange) {
+      case '1h':
+        timeFilter.setHours(timeFilter.getHours() - 1);
+        break;
+      case '24h':
+        timeFilter.setHours(timeFilter.getHours() - 24);
+        break;
+      case '7d':
+        timeFilter.setDate(timeFilter.getDate() - 7);
+        break;
+      case '30d':
+        timeFilter.setDate(timeFilter.getDate() - 30);
+        break;
+    }
+
+    // Build aggregation pipeline for heat map data
+    const pipeline: any[] = [
+      {
+        $match: {
+          updatedAt: { $gte: timeFilter }
+        }
+      }
+    ];
+
+    // Add location bounds filter if provided
+    if (bounds) {
+      const { north, south, east, west } = JSON.parse(bounds as string);
+      pipeline[0].$match['panics.location.latitude'] = { $gte: south, $lte: north };
+      pipeline[0].$match['panics.location.longitude'] = { $gte: west, $lte: east };
+    }
+
+    // Unwind panics to get individual location points
+    pipeline.push(
+      { $unwind: { path: '$panics', preserveNullAndEmptyArrays: true } },
+      {
+        $match: {
+          'panics.timestamp': { $gte: timeFilter }
+        }
+      }
+    );
+
+    // Group by location to create clusters
+    pipeline.push({
+      $group: {
+        _id: {
+          lat: { $round: ['$panics.location.latitude', 3] }, // Round to ~100m precision
+          lng: { $round: ['$panics.location.longitude', 3] }
+        },
+        count: { $sum: 1 },
+        incidents: { $push: {
+          touristId: '$touristId',
+          timestamp: '$panics.timestamp',
+          status: '$panics.onchainStatus'
+        }}
+      }
+    });
+
+    // Format output
+    pipeline.push({
+      $project: {
+        _id: 0,
+        location: {
+          lat: '$_id.lat',
+          lng: '$_id.lng'
+        },
+        intensity: '$count',
+        incidents: '$incidents'
+      }
+    });
+
+    const heatMapPoints = await Tourist.aggregate(pipeline);
+
+    // Get additional statistics
+    const stats = await Tourist.aggregate([
+      {
+        $match: {
+          updatedAt: { $gte: timeFilter }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalTourists: { $sum: 1 },
+          activeTourists: {
+            $sum: {
+              $cond: [
+                { $and: [
+                  { $eq: ['$isActive', true] },
+                  { $eq: ['$kyc.status', 'verified'] }
+                ]}, 
+                1, 
+                0
+              ]
+            }
+          },
+          sosCount: {
+            $sum: { $size: { $ifNull: ['$panics', []] } }
+          },
+          trackingOptIns: {
+            $sum: {
+              $cond: [{ $eq: ['$trackingOptIn', true] }, 1, 0]
+            }
+          }
+        }
+      }
+    ]);
+
+    res.json({
+      success: true,
+      heatMapData: heatMapPoints,
+      statistics: stats[0] || {
+        totalTourists: 0,
+        activeTourists: 0,
+        sosCount: 0,
+        trackingOptIns: 0
+      },
+      metadata: {
+        timeRange,
+        dataType,
+        generatedAt: new Date(),
+        totalPoints: heatMapPoints.length
+      }
+    });
+
+  } catch (error: any) {
+    console.error('Heat map data error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// Get real-time SOS alerts for dashboard
+export const getSOSAlerts = async (req: Request, res: Response) => {
+  try {
+    const { 
+      status = 'active', // 'active', 'all', 'resolved'
+      priority = 'all', // 'high', 'medium', 'low', 'all'
+      limit = 50 
+    } = req.query;
+
+    // Build match conditions
+    const matchConditions: any = {
+      'panics.0': { $exists: true } // Has at least one panic
+    };
+
+    // Filter by status
+    if (status === 'active') {
+      matchConditions['panics.onchainStatus'] = { $in: ['pending', 'submitted'] };
+    } else if (status === 'resolved') {
+      matchConditions['panics.onchainStatus'] = 'confirmed';
+    }
+
+    // Aggregation pipeline to get SOS alerts
+    const pipeline: any[] = [
+      { $match: matchConditions },
+      { $unwind: '$panics' },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'userId',
+          foreignField: '_id',
+          as: 'userInfo'
+        }
+      },
+      { $unwind: '$userInfo' },
+      {
+        $project: {
+          _id: 1,
+          touristId: 1,
+          fullName: 1,
+          phoneNumber: 1,
+          nationality: 1,
+          profileImage: 1,
+          userEmail: '$userInfo.email',
+          panic: '$panics',
+          kycStatus: '$kyc.status',
+          isActive: 1
+        }
+      },
+      { $sort: { 'panic.timestamp': -1 } },
+      { $limit: parseInt(limit as string) }
+    ];
+
+    const sosAlerts = await Tourist.aggregate(pipeline);
+
+    // Calculate priority based on time and status
+    const enrichedAlerts = sosAlerts.map(alert => {
+      const timeSinceAlert = Date.now() - new Date(alert.panic.timestamp).getTime();
+      const hoursAgo = timeSinceAlert / (1000 * 60 * 60);
+      
+      let priorityLevel = 'low';
+      if (hoursAgo < 1) priorityLevel = 'high';
+      else if (hoursAgo < 6) priorityLevel = 'medium';
+
+      return {
+        ...alert,
+        priority: priorityLevel,
+        hoursAgo: Math.round(hoursAgo * 10) / 10,
+        needsAttention: priorityLevel === 'high' || alert.panic.onchainStatus === 'pending'
+      };
+    });
+
+    // Filter by priority if specified
+    let filteredAlerts = enrichedAlerts;
+    if (priority !== 'all') {
+      filteredAlerts = enrichedAlerts.filter(alert => alert.priority === priority);
+    }
+
+    res.json({
+      success: true,
+      sosAlerts: filteredAlerts,
+      summary: {
+        total: filteredAlerts.length,
+        high: filteredAlerts.filter(a => a.priority === 'high').length,
+        medium: filteredAlerts.filter(a => a.priority === 'medium').length,
+        low: filteredAlerts.filter(a => a.priority === 'low').length,
+        needingAttention: filteredAlerts.filter(a => a.needsAttention).length
+      }
+    });
+
+  } catch (error: any) {
+    console.error('SOS alerts error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// Restricted Zones Management - will be extended with actual zone data later
+export const createRestrictedZone = async (req: Request, res: Response) => {
+  try {
+    const { 
+      name, 
+      description, 
+      coordinates, // Array of {lat, lng} points for polygon
+      severity = 'medium', // 'low', 'medium', 'high'
+      isActive = true 
+    } = req.body;
+
+    if (!name || !coordinates || !Array.isArray(coordinates)) {
+      return res.status(400).json({ 
+        error: 'Name and coordinates array are required' 
+      });
+    }
+
+    // For now, we'll store this in a simple format
+    // In a real implementation, you'd have a RestrictedZones collection
+    const zoneData = {
+      id: Date.now().toString(),
+      name,
+      description,
+      coordinates,
+      severity,
+      isActive,
+      createdBy: req.user?._id || 'system',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    // TODO: Store in actual RestrictedZones collection
+    // For now, return success response
+    res.status(201).json({
+      success: true,
+      zone: zoneData,
+      message: 'Restricted zone created successfully'
+    });
+
+  } catch (error: any) {
+    console.error('Create restricted zone error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// Get tourist analytics for dashboard
+export const getTouristAnalytics = async (req: Request, res: Response) => {
+  try {
+    const { period = '7d' } = req.query; // '24h', '7d', '30d', '3m'
+
+    // Calculate date range
+    const endDate = new Date();
+    const startDate = new Date();
+    
+    switch (period) {
+      case '24h':
+        startDate.setHours(startDate.getHours() - 24);
+        break;
+      case '7d':
+        startDate.setDate(startDate.getDate() - 7);
+        break;
+      case '30d':
+        startDate.setDate(startDate.getDate() - 30);
+        break;
+      case '3m':
+        startDate.setMonth(startDate.getMonth() - 3);
+        break;
+    }
+
+    // Aggregate analytics data
+    const [
+      totalStats,
+      registrationTrend,
+      kycStats,
+      nationalityBreakdown,
+      panicStats
+    ] = await Promise.all([
+      // Total statistics
+      Tourist.aggregate([
+        {
+          $group: {
+            _id: null,
+            totalTourists: { $sum: 1 },
+            activeTourists: {
+              $sum: {
+                $cond: [
+                  { $and: [
+                    { $eq: ['$isActive', true] },
+                    { $eq: ['$kyc.status', 'verified'] }
+                  ]}, 
+                  1, 
+                  0
+                ]
+              }
+            },
+            verifiedTourists: {
+              $sum: {
+                $cond: [{ $eq: ['$kyc.status', 'verified'] }, 1, 0]
+              }
+            },
+            trackingOptIns: {
+              $sum: {
+                $cond: [{ $eq: ['$trackingOptIn', true] }, 1, 0]
+              }
+            }
+          }
+        }
+      ]),
+
+      // Registration trend over time
+      Tourist.aggregate([
+        {
+          $match: {
+            createdAt: { $gte: startDate, $lte: endDate }
+          }
+        },
+        {
+          $group: {
+            _id: {
+              $dateToString: {
+                format: period === '24h' ? '%H:00' : '%Y-%m-%d',
+                date: '$createdAt'
+              }
+            },
+            count: { $sum: 1 }
+          }
+        },
+        { $sort: { _id: 1 } }
+      ]),
+
+      // KYC status breakdown
+      Tourist.aggregate([
+        {
+          $group: {
+            _id: '$kyc.status',
+            count: { $sum: 1 }
+          }
+        }
+      ]),
+
+      // Nationality breakdown
+      Tourist.aggregate([
+        {
+          $group: {
+            _id: '$nationality',
+            count: { $sum: 1 }
+          }
+        }
+      ]),
+
+      // Panic/SOS statistics
+      Tourist.aggregate([
+        {
+          $match: {
+            'panics.0': { $exists: true }
+          }
+        },
+        {
+          $project: {
+            panicCount: { $size: '$panics' },
+            recentPanics: {
+              $filter: {
+                input: '$panics',
+                cond: { $gte: ['$$this.timestamp', startDate] }
+              }
+            }
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            totalPanics: { $sum: '$panicCount' },
+            recentPanics: { $sum: { $size: '$recentPanics' } },
+            touristsWithPanics: { $sum: 1 }
+          }
+        }
+      ])
+    ]);
+
+    res.json({
+      success: true,
+      analytics: {
+        period,
+        dateRange: { startDate, endDate },
+        totalStats: totalStats[0] || {
+          totalTourists: 0,
+          activeTourists: 0,
+          verifiedTourists: 0,
+          trackingOptIns: 0
+        },
+        registrationTrend,
+        kycStats,
+        nationalityBreakdown,
+        panicStats: panicStats[0] || {
+          totalPanics: 0,
+          recentPanics: 0,
+          touristsWithPanics: 0
+        }
+      },
+      generatedAt: new Date()
+    });
+
+  } catch (error: any) {
+    console.error('Tourist analytics error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// AI Risk Scoring endpoint (placeholder for ML integration)
+export const updateRiskScore = async (req: Request, res: Response) => {
+  try {
+    const { touristId, riskFactors, riskScore, modelVersion = 'v1.0' } = req.body;
+
+    if (!touristId || riskScore === undefined) {
+      return res.status(400).json({ 
+        error: 'Tourist ID and risk score are required' 
+      });
+    }
+
+    const tourist = await Tourist.findById(touristId);
+    if (!tourist) {
+      return res.status(404).json({ error: 'Tourist not found' });
+    }
+
+    // Create risk assessment data
+    const riskData = {
+      touristId: tourist.touristIdOnChain,
+      riskScore: Math.max(0, Math.min(100, riskScore)), // Clamp between 0-100
+      riskLevel: riskScore >= 80 ? 'high' : riskScore >= 50 ? 'medium' : 'low',
+      factors: riskFactors || [],
+      modelVersion,
+      assessmentDate: new Date(),
+      assessedBy: 'AI_RISK_ENGINE'
+    };
+
+    // In a real implementation, you'd store this in a RiskAssessments collection
+    // For now, we'll add it as an onchain transaction
+    const encryptedRiskData = encryptData(JSON.stringify(riskData));
+    const riskCID = await uploadToIPFS(encryptedRiskData);
+
+    // Add to blockchain transactions
+    tourist.onchainTxs.push({
+      action: 'score',
+      status: 'pending',
+      cid: riskCID,
+      createdAt: new Date()
+    });
+
+    tourist.updatedAt = new Date();
+    await tourist.save();
+
+    res.json({
+      success: true,
+      riskAssessment: riskData,
+      message: 'Risk score updated successfully',
+      cid: riskCID
+    });
+
+  } catch (error: any) {
+    console.error('Update risk score error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// Generate QR code for verified tourist
+export const generateQRCode = async (req: Request, res: Response) => {
+  try {
+    if (!req.user?.isAdmin) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { touristId } = req.params;
+
+    const tourist = await Tourist.findById(touristId);
+    if (!tourist) {
+      return res.status(404).json({ error: 'Tourist not found' });
+    }
+
+    if (tourist.kyc.status !== 'verified') {
+      return res.status(400).json({ 
+        error: 'Tourist must complete KYC verification before QR code generation' 
+      });
+    }
+
+    // Generate QR code data
+    const qrData = {
+      touristId: tourist.touristId,
+      onchainId: tourist.touristIdOnChain,
+      fullName: tourist.fullName,
+      nationality: tourist.nationality,
+      validUntil: tourist.validUntil,
+      issueDate: new Date(),
+      checksum: ethers.keccak256(
+        ethers.toUtf8Bytes(tourist.touristIdOnChain + tourist.fullName)
+      )
+    };
+
+    const qrCodeString = JSON.stringify(qrData);
+    
+    // Update tourist with QR code data
+    tourist.qrCodeData = qrCodeString;
+    tourist.updatedAt = new Date();
+    await tourist.save();
+
+    res.json({
+      success: true,
+      qrCodeData: qrData,
+      qrCodeString,
+      message: 'QR code generated successfully'
+    });
+
+  } catch (error: any) {
+    console.error('Generate QR code error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};

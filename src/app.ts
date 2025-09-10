@@ -9,6 +9,7 @@ import { Server } from "socket.io";
 import authRoutes from "./routes/auth.routes";
 import touristRoutes from "./routes/tourist.routes";
 import kycRoutes from "./routes/kyc.routes";
+import incidentRoutes from "./routes/incident.routes";
 
 // Load environment variables
 dotenv.config();
@@ -51,6 +52,7 @@ app.use(cookieParser());
 app.use("/api/auth", authRoutes);
 app.use("/api/tourist", touristRoutes);
 app.use("/api/kyc", kycRoutes);
+app.use("/api/incidents", incidentRoutes);
 
 // Health check endpoint
 app.get("/health", (req: Request, res: Response) => {
@@ -62,7 +64,8 @@ app.get("/health", (req: Request, res: Response) => {
     routes: [
       "/api/auth",
       "/api/tourist", 
-      "/api/kyc"
+      "/api/kyc",
+      "/api/incidents"
     ]
   });
 });
@@ -76,6 +79,7 @@ app.get("/api", (req: Request, res: Response) => {
       auth: "/api/auth",
       tourist: "/api/tourist",
       kyc: "/api/kyc",
+      incidents: "/api/incidents",
       health: "/health"
     }
   });
@@ -133,6 +137,7 @@ app.use((req: Request, res: Response) => {
       "/api/auth",
       "/api/tourist",
       "/api/kyc",
+      "/api/incidents",
       "/health"
     ]
   });
