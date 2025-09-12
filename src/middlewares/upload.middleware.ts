@@ -1,5 +1,4 @@
 import multer from 'multer';
-import path from 'path';
 import { Request } from 'express';
 import { ApiError } from '../utils/ApiError';
 import { CloudinaryStorage } from 'multer-storage-cloudinary';
