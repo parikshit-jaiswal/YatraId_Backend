@@ -1,9 +1,9 @@
 import multer from 'multer';
 import path from 'path';
 import { Request } from 'express';
-import { ApiError } from '../utils/ApiError.js';
+import { ApiError } from '../utils/ApiError';
 import { CloudinaryStorage } from 'multer-storage-cloudinary';
-import cloudinary from '../config/cloudinary.js';
+import cloudinary from '../config/cloudinary';
 
 // Define file size limits
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
