@@ -6,6 +6,7 @@
     "rootDir": "./src",
     "outDir": "./dist",
     "strict": true,
+    "types": ["node"],
     "typeRoots": ["./src/types", "./node_modules/@types"],
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
@@ -18,12 +19,6 @@
     "sourceMap": false,
     "declaration": false
   },
-  "include": [
-    "src/**/*.ts"
-  ],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "**/*.test.ts"
-  ]
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }
