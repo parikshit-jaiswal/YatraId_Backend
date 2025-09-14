@@ -7,7 +7,7 @@
     "outDir": "./dist",
     "strict": true,
     "types": ["node"],
-    "typeRoots": ["./src/types", "./node_modules/@types"],
+    "typeRoots": ["./node_modules/@types", "./src/types"],
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "skipLibCheck": true,
@@ -19,6 +19,10 @@
     "sourceMap": false,
     "declaration": false
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts"]
+  "include": ["src/**/*.ts", "src/types/**/*.d.ts"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts"],
+  "files": ["src/types/express.d.ts"],
+  "ts-node": {
+    "files": true
+  }
 }
