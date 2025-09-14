@@ -50,20 +50,20 @@ app.use(cookieParser());
 
 // API Routes
 app.use("/api/auth", authRoutes);
-app.use("/api/tourist", touristRoutes);
+app.use("/api/tourists", touristRoutes);
 app.use("/api/kyc", kycRoutes);
 app.use("/api/incidents", incidentRoutes);
 
 // Health check endpoint
 app.get("/health", (req: Request, res: Response) => {
-  res.json({
+  res.json({  
     status: "OK",
     message: "YatraID Backend is running",
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || "development",
     routes: [
       "/api/auth",
-      "/api/tourist", 
+      "/api/tourists", 
       "/api/kyc",
       "/api/incidents"
     ]
@@ -77,7 +77,7 @@ app.get("/api", (req: Request, res: Response) => {
     version: "1.0.0",
     endpoints: {
       auth: "/api/auth",
-      tourist: "/api/tourist",
+      tourist: "/api/tourists", // <-- Changed from "/api/tourist" to "/api/tourists"
       kyc: "/api/kyc",
       incidents: "/api/incidents",
       health: "/health"
@@ -135,7 +135,7 @@ app.use((req: Request, res: Response) => {
     method: req.method,
     availableRoutes: [
       "/api/auth",
-      "/api/tourist",
+      "/api/tourists", // <-- Changed from "/api/tourist" to "/api/tourists"
       "/api/kyc",
       "/api/incidents",
       "/health"

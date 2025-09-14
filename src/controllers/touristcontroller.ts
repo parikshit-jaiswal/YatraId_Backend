@@ -5,6 +5,7 @@ import { encryptData, decryptData } from '../utils/crypto';
 import { uploadToIPFS, getFromIPFS } from '../utils/ipfs';
 import { ethers } from 'ethers';
 import cloudinary from '../config/cloudinary';
+import RestrictedZone from '../models/RestrictedZone';
 
 // Register a new tourist
 export const registerTourist = async (req: Request, res: Response) => {
@@ -1026,24 +1027,14 @@ export const getSOSAlerts = async (req: Request, res: Response) => {
 // Restricted Zones Management - will be extended with actual zone data later
 export const createRestrictedZone = async (req: Request, res: Response) => {
   try {
-    const { 
-      name, 
-      description, 
-      coordinates, // Array of {lat, lng} points for polygon
-      severity = 'medium', // 'low', 'medium', 'high'
-      isActive = true 
-    } = req.body;
+    const { name, description, coordinates, severity = 'medium', isActive = true } = req.body;
 
     if (!name || !coordinates || !Array.isArray(coordinates)) {
-      return res.status(400).json({ 
-        error: 'Name and coordinates array are required' 
-      });
+      return res.status(400).json({ error: 'Name and coordinates array are required' });
     }
 
-    // For now, we'll store this in a simple format
-    // In a real implementation, you'd have a RestrictedZones collection
-    const zoneData = {
-      id: Date.now().toString(),
+    // Actually save to MongoDB!
+    const zone = await RestrictedZone.create({
       name,
       description,
       coordinates,
@@ -1052,22 +1043,16 @@ export const createRestrictedZone = async (req: Request, res: Response) => {
       createdBy: req.user?._id || 'system',
       createdAt: new Date(),
       updatedAt: new Date()
-    };
+    });
 
-    // TODO: Store in actual RestrictedZones collection
-    // For now, return success response
     res.status(201).json({
       success: true,
-      zone: zoneData,
+      zone,
       message: 'Restricted zone created successfully'
     });
-
   } catch (error: any) {
     console.error('Create restricted zone error:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
+    res.status(500).json({ error: 'Internal server error' });
   }
 };
 
@@ -1349,5 +1334,45 @@ export const generateQRCode = async (req: Request, res: Response) => {
       error: 'Internal server error',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
+  }
+};
+
+
+export const getRestrictedZones = async (req: Request, res: Response) => {
+  try {
+    const zones = await RestrictedZone.find({ isActive: true }).sort({ createdAt: -1 });
+    res.json({ success: true, zones });
+  } catch (error: any) {
+    console.error('Get restricted zones error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// Delete a restricted zone
+export const deleteRestrictedZone = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const zone = await RestrictedZone.findByIdAndDelete(id);
+    if (!zone) {
+      return res.status(404).json({ error: 'Zone not found' });
+    }
+    res.json({ success: true, message: 'Zone deleted', zone });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// Update a restricted zone
+export const updateRestrictedZone = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const update = req.body;
+    const zone = await RestrictedZone.findByIdAndUpdate(id, update, { new: true });
+    if (!zone) {
+      return res.status(404).json({ error: 'Zone not found' });
+    }
+    res.json({ success: true, message: 'Zone updated', zone });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Internal server error' });
   }
 };

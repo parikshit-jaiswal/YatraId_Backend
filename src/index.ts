@@ -45,7 +45,7 @@ connectDB()
             console.log('------------------------------------------------');
             console.log('📋 Available API endpoints:');
             console.log(`   • Auth: http://localhost:${port}/api/auth`);
-            console.log(`   • Tourist: http://localhost:${port}/api/tourist`);
+            console.log(`   • Tourist: http://localhost:${port}/api/tourists`); // <-- Changed from "/api/tourist" to "/api/tourists"
             console.log(`   • KYC: http://localhost:${port}/api/kyc`);
             console.log(`   • Health: http://localhost:${port}/health`);
             console.log('------------------------------------------------');

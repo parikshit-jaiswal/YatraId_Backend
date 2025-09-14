@@ -15,7 +15,10 @@ import {
   createRestrictedZone,
   getTouristAnalytics,
   updateRiskScore,
-  generateQRCode
+  generateQRCode,
+  getRestrictedZones,
+  deleteRestrictedZone,
+  updateRestrictedZone
 } from "../controllers/touristcontroller"; 
 import { verifyJWT } from "../middlewares/auth.middleware"; 
 import { uploadProfilePicture } from "../middlewares/upload.middleware"; 
@@ -54,6 +57,9 @@ router.route('/admin/sos-alerts').get(verifyJWT, getSOSAlerts);
 
 // Restricted zones management
 router.route('/admin/restricted-zones').post(verifyJWT, createRestrictedZone);
+router.route('/admin/restricted-zones').get(verifyJWT, getRestrictedZones);
+router.route('/admin/restricted-zones/:id').delete(verifyJWT, deleteRestrictedZone);
+router.route('/admin/restricted-zones/:id').put(verifyJWT, updateRestrictedZone);
 
 // AI and risk scoring
 router.route('/admin/risk-score').post(verifyJWT, updateRiskScore);
