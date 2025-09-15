@@ -59,6 +59,13 @@ export interface ITourist extends Document {
     onchainStatus: "pending" | "submitted" | "confirmed" | "failed";
   }>;
 
+  // Family Relationships (reverse lookup)
+  familyConnections: Array<{
+    familyId: string; // Primary tourist's touristId who added this tourist
+    relationship: "parent" | "spouse" | "child" | "sibling" | "guardian" | "other";
+    addedAt: Date;
+  }>;
+
   // Blockchain Transactions
   onchainTxs: Array<{
     action: "register" | "update" | "panic" | "score" | "verify_kyc";
@@ -151,6 +158,19 @@ const TouristSchema = new Schema<ITourist>(
       },
     ],
 
+    // Family Relationships (reverse lookup)
+    familyConnections: [
+      {
+        familyId: { type: String, required: true },
+        relationship: {
+          type: String,
+          enum: ["parent", "spouse", "child", "sibling", "guardian", "other"],
+          required: true
+        },
+        addedAt: { type: Date, default: Date.now }
+      }
+    ],
+
     // Blockchain Transactions
     onchainTxs: [
       {
@@ -183,5 +203,6 @@ TouristSchema.index({ ownerWallet: 1 });
 TouristSchema.index({ phoneNumber: 1 });
 TouristSchema.index({ "kyc.status": 1 });
 TouristSchema.index({ isActive: 1 });
+TouristSchema.index({ "familyConnections.familyId": 1 });
 
 export default mongoose.model<ITourist>("Tourist", TouristSchema);

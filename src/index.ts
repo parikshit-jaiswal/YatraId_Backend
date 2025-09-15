@@ -47,6 +47,7 @@ connectDB()
             console.log(`   • Auth: http://localhost:${port}/api/auth`);
             console.log(`   • Tourist: http://localhost:${port}/api/tourists`); // <-- Changed from "/api/tourist" to "/api/tourists"
             console.log(`   • KYC: http://localhost:${port}/api/kyc`);
+            console.log(`   • Family: http://localhost:${port}/api/family`);
             console.log(`   • Health: http://localhost:${port}/health`);
             console.log('------------------------------------------------');
             console.log('⌛ Server is waiting for requests...');

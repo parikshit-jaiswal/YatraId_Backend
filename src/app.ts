@@ -10,6 +10,7 @@ import authRoutes from "./routes/auth.routes";
 import touristRoutes from "./routes/tourist.routes";
 import kycRoutes from "./routes/kyc.routes";
 import incidentRoutes from "./routes/incident.routes";
+import familyRoutes from "./routes/family.routes";
 
 // Load environment variables
 dotenv.config();
@@ -53,6 +54,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/tourists", touristRoutes);
 app.use("/api/kyc", kycRoutes);
 app.use("/api/incidents", incidentRoutes);
+app.use("/api/family", familyRoutes);
 
 // Health check endpoint
 app.get("/health", (req: Request, res: Response) => {
@@ -65,7 +67,8 @@ app.get("/health", (req: Request, res: Response) => {
       "/api/auth",
       "/api/tourists", 
       "/api/kyc",
-      "/api/incidents"
+      "/api/incidents",
+      "/api/family"
     ]
   });
 });
@@ -80,6 +83,7 @@ app.get("/api", (req: Request, res: Response) => {
       tourist: "/api/tourists", // <-- Changed from "/api/tourist" to "/api/tourists"
       kyc: "/api/kyc",
       incidents: "/api/incidents",
+      family: "/api/family",
       health: "/health"
     }
   });
@@ -138,6 +142,7 @@ app.use((req: Request, res: Response) => {
       "/api/tourists", // <-- Changed from "/api/tourist" to "/api/tourists"
       "/api/kyc",
       "/api/incidents",
+      "/api/family",
       "/health"
     ]
   });
