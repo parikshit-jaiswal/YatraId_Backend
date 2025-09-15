@@ -98,7 +98,10 @@ const TouristSchema = new Schema<ITourist>(
 
     // Unique Tourist ID (generated after KYC) - REMOVED index: true
     touristId: { type: String, unique: true, sparse: true },
-    qrCodeData: { type: String },
+    qrCodeData: {
+      type: mongoose.Schema.Types.Mixed, // Allow flexible structure
+      default: null
+    },
 
     // Blockchain & Storage - REMOVED index: true
     touristIdOnChain: { type: String, unique: true, sparse: true },

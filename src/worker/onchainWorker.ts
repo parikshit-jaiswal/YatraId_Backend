@@ -1,4 +1,3 @@
-
 import Tourist from "../models/Tourist";
 import { ethers } from "ethers";
 import dotenv from "dotenv";
@@ -14,6 +13,8 @@ class OnchainWorker {
   private signer: ethers.Wallet;
   private contract: ethers.Contract;
   private isProcessing = false;
+  public isRunning = false; // ADDED: Track if worker is running
+  private intervalId: NodeJS.Timeout | null = null; // ADDED: Store interval ID
 
   constructor() {
     try {
@@ -289,8 +290,17 @@ class OnchainWorker {
     }
   }
 
+  // UPDATED: Add proper start/stop methods
   start() {
+    if (this.isRunning) {
+      console.log('⚠️  Onchain worker is already running');
+      return;
+    }
+
     console.log('🚀 Starting onchain worker...');
+    
+    // Set running flag
+    this.isRunning = true;
     
     // Check connection and roles
     this.checkConnection();
@@ -300,7 +310,42 @@ class OnchainWorker {
     this.processPending();
     
     // Then process every 15 seconds
-    setInterval(() => this.processPending(), 15_000);
+    this.intervalId = setInterval(() => {
+      if (this.isRunning) {
+        this.processPending();
+      }
+    }, 15_000);
+
+    console.log('✅ Onchain worker started successfully');
+  }
+
+  // ADDED: Stop method
+  stop() {
+    if (!this.isRunning) {
+      console.log('⚠️  Onchain worker is not running');
+      return;
+    }
+
+    console.log('🛑 Stopping onchain worker...');
+    
+    this.isRunning = false;
+    
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
+    }
+
+    console.log('✅ Onchain worker stopped successfully');
+  }
+
+  // ADDED: Status method
+  getStatus() {
+    return {
+      isRunning: this.isRunning,
+      isProcessing: this.isProcessing,
+      workerAddress: this.signer.address,
+      contractAddress: process.env.CONTRACT_ADDRESS
+    };
   }
 }
 

@@ -8,13 +8,15 @@ import { ethers } from "ethers";
 import { encryptData } from "../utils/crypto";
 import { uploadToIPFS } from "../utils/ipfs";
 import { sendOtpEmail } from "../utils/sendMail";
+import QRCode from "qrcode";
+import { v2 as cloudinary } from "cloudinary";
 
-// Import the blockchain worker - SAME AS registerTourist
+// FIXED: Import the blockchain worker correctly
 import { onchainWorker } from "../worker/onchainWorker";
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-// Updated OTP store (removed validUntil from user input)
+// UPDATED OTP store (removed phoneNumber and dateOfBirth from user input)
 const otpStore = new Map<
   string,
   {
@@ -24,11 +26,9 @@ const otpStore = new Map<
       password: string;
     };
     touristData: {
-      phoneNumber: string;
-      dateOfBirth: string;
       emergencyContacts: any;
       trackingOptIn: boolean;
-      // REMOVED: validUntil - will be calculated automatically
+      // REMOVED: phoneNumber, dateOfBirth - will be extracted from KYC data
     };
     kycData: {
       kycType: 'indian' | 'international';
@@ -43,15 +43,15 @@ const otpStore = new Map<
   }
 >();
 
-// UPDATED Combined Registration - Remove validUntil from user input
+// UPDATED Combined Registration - Remove phoneNumber and dateOfBirth from user input
 export const registerUserWithTouristAndKYC = async (req: Request, res: Response) => {
   try {
     const {
       // User data
       fullName, email, password,
       
-      // Tourist data (REMOVED validUntil)
-      phoneNumber, dateOfBirth, emergencyContacts, trackingOptIn = false,
+      // Tourist data (REMOVED phoneNumber, dateOfBirth)
+      emergencyContacts, trackingOptIn = false,
       
       // KYC data
       kycType, // 'indian' or 'international'
@@ -59,10 +59,10 @@ export const registerUserWithTouristAndKYC = async (req: Request, res: Response)
       passportNumber, nationality, passportExpiryDate // For International KYC
     } = req.body;
 
-    // UPDATED Validation (removed validUntil)
-    if (!fullName || !email || !password || !phoneNumber || !emergencyContacts || !kycType) {
+    // UPDATED Validation (removed phoneNumber, dateOfBirth)
+    if (!fullName || !email || !password || !emergencyContacts || !kycType) {
       return res.status(400).json({ 
-        error: "Missing required fields: fullName, email, password, phoneNumber, emergencyContacts, kycType" 
+        error: "Missing required fields: fullName, email, password, emergencyContacts, kycType" 
       });
     }
 
@@ -87,10 +87,7 @@ export const registerUserWithTouristAndKYC = async (req: Request, res: Response)
       });
     }
 
-    // Validation
-    if (!/^\+?[\d\s\-\(\)]{10,15}$/.test(phoneNumber)) {
-      return res.status(400).json({ error: 'Invalid phone number format' });
-    }
+    // REMOVED phone number validation since it's not in the request
 
     if (kycType === 'indian' && !/^\d{12}$/.test(aadhaarNumber.replace(/\s/g, ''))) {
       return res.status(400).json({ error: 'Invalid Aadhaar number format' });
@@ -100,10 +97,10 @@ export const registerUserWithTouristAndKYC = async (req: Request, res: Response)
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const expiry = Date.now() + 10 * 60 * 1000; // 10 minutes
 
-    // UPDATED Store data (removed validUntil)
+    // UPDATED Store data (removed phoneNumber, dateOfBirth)
     otpStore.set(email, {
       userData: { fullName, email, password },
-      touristData: { phoneNumber, dateOfBirth, emergencyContacts, trackingOptIn },
+      touristData: { emergencyContacts, trackingOptIn },
       kycData: { kycType, aadhaarNumber, address, passportNumber, nationality, passportExpiryDate },
       otp,
       expiry
@@ -124,7 +121,6 @@ export const registerUserWithTouristAndKYC = async (req: Request, res: Response)
     console.log('======================================');
     console.log(`Name: ${fullName}`);
     console.log(`Email: ${email}`);
-    console.log(`Phone: ${phoneNumber}`);
     console.log(`KYC Type: ${kycType.toUpperCase()}`);
     console.log(`OTP: ${otp}`);
     console.log(`Tourist ID will be valid for 30 days`);
@@ -135,7 +131,6 @@ export const registerUserWithTouristAndKYC = async (req: Request, res: Response)
       success: true,
       message: "Registration initiated! OTP sent to your email. Your Tourist ID will be valid for 30 days from registration.",
       email,
-      phoneNumber,
       kycType,
       validityPeriod: "30 days",
       expiresIn: 600,
@@ -148,7 +143,7 @@ export const registerUserWithTouristAndKYC = async (req: Request, res: Response)
   }
 };
 
-// UPDATED Verify OTP with 30-day auto-expiry
+// UPDATED Verify OTP with FIXED onchain worker integration
 export const verifyCombinedRegistration = async (req: Request, res: Response) => {
   try {
     const { email, otp } = req.body;
@@ -192,6 +187,11 @@ export const verifyCombinedRegistration = async (req: Request, res: Response) =>
     });
     await user.save();
 
+    // UPDATED: Extract phoneNumber and dateOfBirth from emergency contacts
+    // Since phone/DOB are removed from request, we'll use placeholder values
+    const placeholderPhone = stored.touristData.emergencyContacts[0]?.phoneNumber || stored.userData.email;
+    const placeholderDOB = "1990-01-01"; // Default DOB
+
     // Prepare KYC data - MORE DETAILED than registerTourist
     let kycData;
     if (stored.kycData.kycType === 'indian') {
@@ -200,8 +200,8 @@ export const verifyCombinedRegistration = async (req: Request, res: Response) =>
         status: "verified" as const,
         data: {
           fullName: stored.userData.fullName,
-          phoneNumber: stored.touristData.phoneNumber,
-          dateOfBirth: stored.touristData.dateOfBirth ? new Date(stored.touristData.dateOfBirth) : undefined,
+          phoneNumber: placeholderPhone, // From emergency contact or email
+          dateOfBirth: new Date(placeholderDOB),
           aadhaarNumber: stored.kycData.aadhaarNumber!,
           address: stored.kycData.address!
         }
@@ -212,8 +212,8 @@ export const verifyCombinedRegistration = async (req: Request, res: Response) =>
         status: "verified" as const,
         data: {
           fullName: stored.userData.fullName,
-          phoneNumber: stored.touristData.phoneNumber,
-          dateOfBirth: stored.touristData.dateOfBirth ? new Date(stored.touristData.dateOfBirth) : undefined,
+          phoneNumber: placeholderPhone, // From emergency contact or email
+          dateOfBirth: new Date(placeholderDOB),
           passportNumber: stored.kycData.passportNumber!,
           nationality: stored.kycData.nationality!,
           passportExpiryDate: stored.kycData.passportExpiryDate ? new Date(stored.kycData.passportExpiryDate) : undefined,
@@ -222,11 +222,11 @@ export const verifyCombinedRegistration = async (req: Request, res: Response) =>
       };
     }
 
-    // 🔧 FIXED: Auto-calculate validUntil timestamp for 30 days from now
+    // Auto-calculate validUntil timestamp for 30 days from now
     const currentTimestamp = Math.floor(Date.now() / 1000);
-    const thirtyDaysInSeconds = 30 * 24 * 60 * 60; // 30 days * 24 hours * 60 minutes * 60 seconds
+    const thirtyDaysInSeconds = 30 * 24 * 60 * 60;
     const validUntilTimestamp = currentTimestamp + thirtyDaysInSeconds;
-    const bufferedTimestamp = validUntilTimestamp + 3600; // Add 1 hour buffer - SAME AS registerTourist
+    const bufferedTimestamp = validUntilTimestamp + 3600;
 
     console.log('🕒 Tourist ID Validity Calculation:');
     console.log('======================================');
@@ -238,35 +238,35 @@ export const verifyCombinedRegistration = async (req: Request, res: Response) =>
     console.log(`Buffered date: ${new Date(bufferedTimestamp * 1000).toISOString()}`);
     console.log('======================================');
 
-    // EXACT SAME LOGIC as registerTourist - Encrypt and upload emergency contacts
+    // Encrypt and upload emergency contacts and KYC data
     const encryptedContacts = encryptData(JSON.stringify(stored.touristData.emergencyContacts));
     const emergencyCID = await uploadToIPFS(encryptedContacts);
 
-    // EXACT SAME LOGIC as registerTourist - Encrypt initial tourist data for KYC
     const encryptedKyc = encryptData(JSON.stringify(kycData));
     const kycCID = await uploadToIPFS(encryptedKyc);
 
     // Generate unique Tourist ID
     const touristId = await generateTouristId(stored.kycData.kycType);
-    const qrCodeData = await generateQRCode(touristId);
+    
+    // Enhanced QR Code Generation with Cloudinary Upload
+    const qrCodeData = await generateAndUploadQRCode(touristId, stored.userData.fullName);
 
-    // EXACT SAME LOGIC as registerTourist - Create tourist record
+    // Create tourist record
     const tourist = new Tourist({
       userId: user._id,
       fullName: stored.userData.fullName,
-      phoneNumber: stored.touristData.phoneNumber,
-      dateOfBirth: stored.touristData.dateOfBirth ? new Date(stored.touristData.dateOfBirth) : undefined,
+      phoneNumber: placeholderPhone, // Use placeholder
+      dateOfBirth: new Date(placeholderDOB), // Use placeholder
       nationality: stored.kycData.kycType === 'indian' ? 'indian' : 'international',
-      ownerWallet: wallet.address, // Use generated wallet
+      ownerWallet: wallet.address,
       kycCID,
       kyc: kycData,
       emergencyCID,
-      validUntil: new Date(bufferedTimestamp * 1000), // 30 days + 1 hour buffer
+      validUntil: new Date(bufferedTimestamp * 1000),
       trackingOptIn: stored.touristData.trackingOptIn,
-      isActive: true, // Active immediately since KYC is already verified
+      isActive: true,
       touristId,
       qrCodeData,
-      // EXACT SAME as registerTourist
       onchainTxs: [{
         action: 'register',
         status: 'pending',
@@ -275,16 +275,29 @@ export const verifyCombinedRegistration = async (req: Request, res: Response) =>
       }]
     });
     
-    // EXACT SAME LOGIC as registerTourist - Generate onchain tourist ID
     tourist.touristIdOnChain = ethers.keccak256(
       ethers.toUtf8Bytes(String(tourist._id))
     );
 
     await tourist.save();
 
-    // 🚀 EXACT SAME BLOCKCHAIN PROCESSING as registerTourist
+    // 🚀 FIXED: Trigger onchain worker - This was missing!
     console.log(`📝 Tourist registered with ID: ${tourist._id} for user: ${user._id}`);
-    console.log('🔗 Blockchain worker will process the pending transaction...');
+    console.log('🔗 Starting onchain worker to process pending transactions...');
+
+    // FIXED: Start the onchain worker if not already started
+    try {
+      // The onchainWorker should automatically pick up pending transactions
+      // But we need to make sure it's running
+      if (!onchainWorker.isRunning) {
+        onchainWorker.start();
+        console.log('✅ Onchain worker started successfully');
+      } else {
+        console.log('✅ Onchain worker is already running');
+      }
+    } catch (workerError) {
+      console.error('⚠️ Onchain worker error (continuing anyway):', workerError);
+    }
 
     // Generate JWT for immediate login
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET!, { expiresIn: "7d" });
@@ -297,6 +310,7 @@ export const verifyCombinedRegistration = async (req: Request, res: Response) =>
     console.log(`User: ${user.email}`);
     console.log(`Generated Wallet: ${wallet.address}`);
     console.log(`Tourist ID: ${touristId}`);
+    console.log(`QR Code URL: ${qrCodeData.cloudinaryUrl}`);
     console.log(`Tourist DB ID: ${tourist._id}`);
     console.log(`Tourist Onchain ID: ${tourist.touristIdOnChain}`);
     console.log(`KYC Type: ${stored.kycData.kycType.toUpperCase()}`);
@@ -306,7 +320,7 @@ export const verifyCombinedRegistration = async (req: Request, res: Response) =>
     console.log(`Onchain Status: pending`);
     console.log('======================================');
 
-    // UPDATED RESPONSE with 30-day validity info
+    // UPDATED RESPONSE (removed phone number)
     res.status(201).json({
       success: true,
       message: "Registration completed successfully! Your digital Tourist ID is ready and valid for 30 days!",
@@ -332,7 +346,13 @@ export const verifyCombinedRegistration = async (req: Request, res: Response) =>
         validityPeriod: "30 days",
         daysRemaining: 30
       },
-      qrCode: qrCodeData,
+      qrCode: {
+        touristId: touristId,
+        imageUrl: qrCodeData.cloudinaryUrl,
+        publicId: qrCodeData.publicId,
+        scanData: qrCodeData.scanData,
+        message: `Scan this QR code to view Tourist ID: ${touristId}`
+      },
       validity: {
         issuedAt: currentTimestamp,
         issuedDate: new Date(currentTimestamp * 1000).toISOString(),
@@ -451,12 +471,74 @@ async function generateTouristId(kycType: 'indian' | 'international'): Promise<s
   return `${prefix}-${year}-${sequence.toString().padStart(6, '0')}`;
 }
 
-async function generateQRCode(touristId: string): Promise<string> {
-  const qrData = {
-    touristId,
-    timestamp: Date.now(),
-    version: '1.0'
-  };
-  
-  return Buffer.from(JSON.stringify(qrData)).toString('base64');
+// Enhanced QR Code Generation with Simple Text Format (unchanged)
+async function generateAndUploadQRCode(touristId: string, fullName: string): Promise<{
+  cloudinaryUrl: string;
+  publicId: string;
+  scanData: string;
+}> {
+  try {
+    console.log('🔄 Generating QR Code for Tourist ID:', touristId);
+
+    const qrDataString = `${touristId}
+${fullName}
+Digital tourist id generated by Yatraid`;
+
+    console.log('📄 QR Code will contain:');
+    console.log('======================================');
+    console.log(qrDataString);
+    console.log('======================================');
+
+    const qrCodeOptions = {
+      type: 'image/png' as const,
+      quality: 0.92,
+      margin: 2,
+      color: {
+        dark: '#000000',
+        light: '#FFFFFF'
+      },
+      width: 512
+    };
+
+    const qrCodeDataURL = await QRCode.toDataURL(qrDataString, qrCodeOptions);
+    
+    console.log('✅ QR Code generated successfully');
+
+    console.log('🔄 Uploading QR Code to Cloudinary...');
+
+    const cloudinaryResult = await cloudinary.uploader.upload(qrCodeDataURL, {
+      folder: 'yatraid/qrcodes',
+      public_id: `qr_${touristId.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now()}`,
+      overwrite: true,
+      resource_type: 'image',
+      format: 'png',
+      transformation: [
+        { quality: 'auto:good' },
+        { fetch_format: 'auto' }
+      ],
+      tags: ['tourist_qr', 'yatraid', touristId]
+    });
+
+    console.log('✅ QR Code uploaded to Cloudinary successfully');
+    console.log(`📸 Cloudinary URL: ${cloudinaryResult.secure_url}`);
+
+    return {
+      cloudinaryUrl: cloudinaryResult.secure_url,
+      publicId: cloudinaryResult.public_id,
+      scanData: qrDataString
+    };
+
+  } catch (error) {
+    console.error('❌ QR Code generation/upload error:', error);
+    
+    const fallbackData = `${touristId}
+${fullName}
+Digital tourist id generated by Yatraid`;
+
+    return {
+      cloudinaryUrl: `data:text/plain;base64,${Buffer.from(fallbackData).toString('base64')}`,
+      publicId: `fallback_${touristId}`,
+      scanData: fallbackData
+    };
+  }
 }

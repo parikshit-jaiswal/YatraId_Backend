@@ -18,6 +18,7 @@
     "debug": "ls -la dist/ && node -e \"console.log('Files in dist:'); require('fs').readdirSync('./dist').forEach(f => console.log('  -', f))\""
   },
   "dependencies": {
+    "@types/qrcode": "^1.5.5",
     "axios": "^1.8.4",
     "bcrypt": "^5.1.1",
     "bcryptjs": "^3.0.2",
@@ -38,6 +39,7 @@
     "multer-storage-cloudinary": "^4.0.0",
     "nodemailer": "^6.10.1",
     "nodemon": "^3.1.10",
+    "qrcode": "^1.5.4",
     "resend": "^4.4.1",
     "rimraf": "^3.0.2",
     "socket.io": "^4.8.1"
