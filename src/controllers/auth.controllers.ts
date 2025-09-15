@@ -123,7 +123,7 @@ export const verifyRegistrationOTP = async (req: Request, res: Response) => {
     await newUser.save();
     otpStore.delete(email);
 
-    // Generate JWT
+    // Generate JWT for registration
     const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET!, { expiresIn: "7d" });
 
     res.status(201).json({ 
@@ -152,11 +152,12 @@ export const loginController = async (req: Request, res: Response) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(401).json({ message: "Invalid credentials" });
     
+    // Generate JWT token after successful login
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET!, { expiresIn: "7d" });
     
     res.status(200).json({ 
       success: true,
-      token, 
+      token,
       userId: user._id,
       walletAddress: user.walletAddress,
       kycStatus: user.kycStatus,
@@ -201,11 +202,12 @@ export const googleLoginController = async (req: Request, res: Response) => {
       await user.save();
     }
     
+    // Generate JWT token for Google login
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET!, { expiresIn: "7d" });
     
     res.status(200).json({ 
       success: true,
-      token, 
+      token,
       userId: user._id,
       walletAddress: user.walletAddress,
       kycStatus: user.kycStatus
