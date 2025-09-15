@@ -18,6 +18,7 @@
     "debug": "ls -la dist/ && node -e \"console.log('Files in dist:'); require('fs').readdirSync('./dist').forEach(f => console.log('  -', f))\""
   },
   "dependencies": {
+    "@sendgrid/mail": "^8.1.5",
     "@types/qrcode": "^1.5.5",
     "axios": "^1.8.4",
     "bcrypt": "^5.1.1",

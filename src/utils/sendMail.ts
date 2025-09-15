@@ -4,7 +4,7 @@ export const sendOtpEmail = async (email: string, otp: string) => {
   try {
     console.log('📧 Attempting to send OTP email to:', email);
     console.log('🔑 OTP to send:', otp);
-    
+
     // Check environment variables
     console.log('Environment check:');
     console.log('EMAIL_USER exists:', !!process.env.EMAIL_USER);
@@ -19,8 +19,8 @@ export const sendOtpEmail = async (email: string, otp: string) => {
     // FIXED: More robust Gmail SMTP configuration
     const transporter = nodemailer.createTransport({
       host: 'smtp.gmail.com',
-      port: 465,
-      secure: true, // Use SSL
+      port: 587,
+      secure: false, // Use STARTTLS
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS,
@@ -78,7 +78,7 @@ export const sendOtpEmail = async (email: string, otp: string) => {
     console.log('📤 Sending email...');
     const result = await transporter.sendMail(mailOptions);
     console.log('✅ Email sent successfully:', result.messageId);
-    
+
     return result;
 
   } catch (error: any) {
@@ -90,7 +90,7 @@ export const sendOtpEmail = async (email: string, otp: string) => {
       responseCode: error.responseCode,
       command: error.command
     });
-    
+
     // More specific error messages
     if (error.code === 'ETIMEDOUT') {
       throw new Error('Email service connection timeout. This might be due to network restrictions on your hosting provider.');
