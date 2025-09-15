@@ -11,6 +11,7 @@ import touristRoutes from "./routes/tourist.routes";
 import kycRoutes from "./routes/kyc.routes";
 import incidentRoutes from "./routes/incident.routes";
 import familyRoutes from "./routes/family.routes";
+import locationRoutes from "./routes/location.routes";
 
 // Load environment variables
 dotenv.config();
@@ -55,6 +56,7 @@ app.use("/api/tourists", touristRoutes);
 app.use("/api/kyc", kycRoutes);
 app.use("/api/incidents", incidentRoutes);
 app.use("/api/family", familyRoutes);
+app.use("/api/locations", locationRoutes);
 
 // Health check endpoint
 app.get("/health", (req: Request, res: Response) => {
@@ -68,7 +70,8 @@ app.get("/health", (req: Request, res: Response) => {
       "/api/tourists", 
       "/api/kyc",
       "/api/incidents",
-      "/api/family"
+      "/api/family",
+      "/api/locations"
     ]
   });
 });
@@ -84,6 +87,7 @@ app.get("/api", (req: Request, res: Response) => {
       kyc: "/api/kyc",
       incidents: "/api/incidents",
       family: "/api/family",
+      locations: "/api/locations",
       health: "/health"
     }
   });
