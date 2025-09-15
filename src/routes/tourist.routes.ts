@@ -57,7 +57,7 @@ router.route('/admin/sos-alerts').get(verifyJWT, getSOSAlerts);
 
 // Restricted zones management
 router.route('/admin/restricted-zones').post(verifyJWT, createRestrictedZone);
-router.route('/admin/restricted-zones').get(verifyJWT, getRestrictedZones);
+router.route('/admin/restricted-zones').get(getRestrictedZones);
 router.route('/admin/restricted-zones/:id').delete(verifyJWT, deleteRestrictedZone);
 router.route('/admin/restricted-zones/:id').put(verifyJWT, updateRestrictedZone);
 

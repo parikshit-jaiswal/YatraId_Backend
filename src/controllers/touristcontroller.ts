@@ -439,7 +439,7 @@ export const getAllTourists = async (req: Request, res: Response) => {
   }
 };
 
-// Get dashboard data for user - ENHANCED with complete details
+// Get dashboard data for user - SIMPLIFIED with only essential fields
 export const getDashboard = async (req: Request, res: Response) => {
   try {
     const userId = req.user?._id;
@@ -449,7 +449,7 @@ export const getDashboard = async (req: Request, res: Response) => {
     }
 
     // Get user info
-    const user = await User.findById(userId).select('name email kycStatus kycType walletAddress');
+    const user = await User.findById(userId).select('name email');
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -460,138 +460,29 @@ export const getDashboard = async (req: Request, res: Response) => {
     if (!tourist) {
       return res.json({
         success: true,
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          walletAddress: user.walletAddress,
-          kycStatus: user.kycStatus,
-          kycType: user.kycType
-        },
-        tourist: null,
         hasProfile: false,
         message: 'No tourist profile found. Please create a tourist profile first.'
       });
     }
 
-    // Analyze blockchain status properly
-    const { overallStatus, isRegistered, latestTx, canUseBlockchain } = analyzeBlockchainStatus(tourist.onchainTxs);
-    
-    // Count panics
-    const panicCount = tourist.panics?.length || 0;
-    const activePanics = tourist.panics?.filter(p => 
-      p.onchainStatus === 'pending' || p.onchainStatus === 'submitted'
-    ).length || 0;
-
-    // Calculate validity period details - ENHANCED
-    const currentTimestamp = Math.floor(Date.now() / 1000);
-    const validUntilTimestamp = Math.floor(tourist.validUntil.getTime() / 1000);
-    const issuedTimestamp = Math.floor(tourist.createdAt.getTime() / 1000);
-    const daysRemaining = Math.max(0, Math.ceil((validUntilTimestamp - currentTimestamp) / (24 * 60 * 60)));
-    const validityStatus = validUntilTimestamp > currentTimestamp ? 'active' : 'expired';
-
-    // Determine user message
-    let message = 'Profile active';
-    if (tourist.kyc.status === 'pending') {
-      message = 'Please complete KYC verification to activate your profile.';
-    } else if (!isRegistered) {
-      message = 'Blockchain registration in progress. Please wait.';
-    } else if (tourist.kyc.status === 'verified' && isRegistered) {
-      message = 'Profile fully active and registered on blockchain.';
+    // Extract QR URL from qrCodeData
+    let qrUrl = null;
+    if (tourist.qrCodeData) {
+      if (typeof tourist.qrCodeData === 'object' && tourist.qrCodeData.cloudinaryUrl) {
+        qrUrl = tourist.qrCodeData.cloudinaryUrl;
+      }
+      // If it's still a string format, we don't have the Cloudinary URL
     }
 
-    // ENHANCED RESPONSE - Same format as verify OTP
+    // SIMPLIFIED RESPONSE - Only essential fields
     res.json({
       success: true,
-      message: message,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        walletAddress: user.walletAddress,
-        kycStatus: user.kycStatus,
-        kycType: user.kycType
-      },
-      tourist: {
-        id: tourist._id,
-        touristId: tourist.touristId || null, // May not exist for old records
-        touristIdOnChain: tourist.touristIdOnChain,
-        nationality: tourist.nationality,
-        isActive: tourist.isActive,
-        onchainStatus: overallStatus,
-        kycStatus: tourist.kyc.status,
-        validUntil: validUntilTimestamp,
-        validUntilDate: new Date(validUntilTimestamp * 1000).toISOString(),
-        validityPeriod: "30 days",
-        daysRemaining: daysRemaining,
-        // Additional fields from original dashboard
-        trackingOptIn: tourist.trackingOptIn,
-        isRegisteredOnChain: isRegistered,
-        canUseBlockchain: canUseBlockchain,
-        lastTxHash: latestTx?.txHash,
-        lastSuccessfulTxHash: getLastSuccessfulTxHash(tourist.onchainTxs),
-        panicCount,
-        activePanics,
-        createdAt: tourist.createdAt,
-        updatedAt: tourist.updatedAt
-      },
-      // ADDED: QR Code details (same as verify OTP)
-      qrCode: tourist.qrCodeData ? (() => {
-        // Type guard for object with expected properties
-        if (
-          typeof tourist.qrCodeData === 'object' &&
-          tourist.qrCodeData !== null &&
-          'cloudinaryUrl' in tourist.qrCodeData
-        ) {
-          const qrObj = tourist.qrCodeData as {
-            cloudinaryUrl?: string;
-            publicId?: string;
-            scanData?: string;
-          };
-          return {
-            touristId: tourist.touristId || (tourist._id as string).toString(),
-            imageUrl: qrObj.cloudinaryUrl || null,
-            publicId: qrObj.publicId || null,
-            scanData: qrObj.scanData || null,
-            message: `Scan this QR code to view Tourist ID: ${tourist.touristId || tourist._id}`
-          };
-        } else {
-          return {
-            touristId: tourist.touristId || (tourist._id as string).toString(),
-            imageUrl: null,
-            publicId: null,
-            scanData: tourist.qrCodeData,
-            message: `Scan this QR code to view Tourist ID: ${tourist.touristId || tourist._id}`
-          };
-        }
-      })() : null,
-      // ADDED: Validity details (same as verify OTP)
-      validity: {
-        issuedAt: issuedTimestamp,
-        issuedDate: new Date(issuedTimestamp * 1000).toISOString(),
-        validUntil: validUntilTimestamp,
-        validUntilDate: new Date(validUntilTimestamp * 1000).toISOString(),
-        validityPeriod: "30 days",
-        daysRemaining: daysRemaining,
-        status: validityStatus
-      },
-      // ADDED: Blockchain details (same as verify OTP)
-      blockchain: {
-        status: overallStatus,
-        message: getBlockchainMessage(overallStatus, tourist.kyc.status),
-        kycCID: tourist.kycCID,
-        emergencyCID: tourist.emergencyCID,
-        workerStatus: 'running' // Assume worker is running
-      },
-      // Keep existing dashboard-specific fields
       hasProfile: true,
-      canCompleteKyc: tourist.kyc.status === 'pending',
-      blockchainDetails: {
-        totalTransactions: tourist.onchainTxs.length,
-        successfulTransactions: tourist.onchainTxs.filter(tx => tx.status === 'confirmed').length,
-        failedTransactions: tourist.onchainTxs.filter(tx => tx.status === 'failed').length,
-        pendingTransactions: tourist.onchainTxs.filter(tx => tx.status === 'pending' || tx.status === 'submitted').length
-      }
+      name: user.name,
+      touristId: tourist.touristId || null,
+      profileImage: tourist.profileImage || null,
+      qrUrl: qrUrl,
+      message: tourist.touristId ? 'Profile active' : 'Profile created, Tourist ID pending'
     });
 
   } catch (error: any) {
