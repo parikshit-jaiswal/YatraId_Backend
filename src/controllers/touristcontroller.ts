@@ -439,10 +439,10 @@ export const getAllTourists = async (req: Request, res: Response) => {
   }
 };
 
-// Get dashboard data for user
+// Get dashboard data for user - ENHANCED with complete details
 export const getDashboard = async (req: Request, res: Response) => {
   try {
-    const userId = req.user?._id; // Changed from req.user?.id
+    const userId = req.user?._id;
     
     if (!userId) {
       return res.status(401).json({ error: 'User not authenticated' });
@@ -461,6 +461,7 @@ export const getDashboard = async (req: Request, res: Response) => {
       return res.json({
         success: true,
         user: {
+          id: user._id,
           name: user.name,
           email: user.email,
           walletAddress: user.walletAddress,
@@ -482,6 +483,13 @@ export const getDashboard = async (req: Request, res: Response) => {
       p.onchainStatus === 'pending' || p.onchainStatus === 'submitted'
     ).length || 0;
 
+    // Calculate validity period details - ENHANCED
+    const currentTimestamp = Math.floor(Date.now() / 1000);
+    const validUntilTimestamp = Math.floor(tourist.validUntil.getTime() / 1000);
+    const issuedTimestamp = Math.floor(tourist.createdAt.getTime() / 1000);
+    const daysRemaining = Math.max(0, Math.ceil((validUntilTimestamp - currentTimestamp) / (24 * 60 * 60)));
+    const validityStatus = validUntilTimestamp > currentTimestamp ? 'active' : 'expired';
+
     // Determine user message
     let message = 'Profile active';
     if (tourist.kyc.status === 'pending') {
@@ -492,9 +500,12 @@ export const getDashboard = async (req: Request, res: Response) => {
       message = 'Profile fully active and registered on blockchain.';
     }
 
+    // ENHANCED RESPONSE - Same format as verify OTP
     res.json({
       success: true,
+      message: message,
       user: {
+        id: user._id,
         name: user.name,
         email: user.email,
         walletAddress: user.walletAddress,
@@ -503,14 +514,20 @@ export const getDashboard = async (req: Request, res: Response) => {
       },
       tourist: {
         id: tourist._id,
+        touristId: tourist.touristId || null, // May not exist for old records
         touristIdOnChain: tourist.touristIdOnChain,
         nationality: tourist.nationality,
-        validUntil: tourist.validUntil,
-        trackingOptIn: tourist.trackingOptIn,
+        isActive: tourist.isActive,
+        onchainStatus: overallStatus,
         kycStatus: tourist.kyc.status,
-        onchainStatus: overallStatus, // Use analyzed status
-        isRegisteredOnChain: isRegistered, // Clear indicator
-        canUseBlockchain, // Can use blockchain features
+        validUntil: validUntilTimestamp,
+        validUntilDate: new Date(validUntilTimestamp * 1000).toISOString(),
+        validityPeriod: "30 days",
+        daysRemaining: daysRemaining,
+        // Additional fields from original dashboard
+        trackingOptIn: tourist.trackingOptIn,
+        isRegisteredOnChain: isRegistered,
+        canUseBlockchain: canUseBlockchain,
         lastTxHash: latestTx?.txHash,
         lastSuccessfulTxHash: getLastSuccessfulTxHash(tourist.onchainTxs),
         panicCount,
@@ -518,6 +535,55 @@ export const getDashboard = async (req: Request, res: Response) => {
         createdAt: tourist.createdAt,
         updatedAt: tourist.updatedAt
       },
+      // ADDED: QR Code details (same as verify OTP)
+      qrCode: tourist.qrCodeData ? (() => {
+        // Type guard for object with expected properties
+        if (
+          typeof tourist.qrCodeData === 'object' &&
+          tourist.qrCodeData !== null &&
+          'cloudinaryUrl' in tourist.qrCodeData
+        ) {
+          const qrObj = tourist.qrCodeData as {
+            cloudinaryUrl?: string;
+            publicId?: string;
+            scanData?: string;
+          };
+          return {
+            touristId: tourist.touristId || (tourist._id as string).toString(),
+            imageUrl: qrObj.cloudinaryUrl || null,
+            publicId: qrObj.publicId || null,
+            scanData: qrObj.scanData || null,
+            message: `Scan this QR code to view Tourist ID: ${tourist.touristId || tourist._id}`
+          };
+        } else {
+          return {
+            touristId: tourist.touristId || (tourist._id as string).toString(),
+            imageUrl: null,
+            publicId: null,
+            scanData: tourist.qrCodeData,
+            message: `Scan this QR code to view Tourist ID: ${tourist.touristId || tourist._id}`
+          };
+        }
+      })() : null,
+      // ADDED: Validity details (same as verify OTP)
+      validity: {
+        issuedAt: issuedTimestamp,
+        issuedDate: new Date(issuedTimestamp * 1000).toISOString(),
+        validUntil: validUntilTimestamp,
+        validUntilDate: new Date(validUntilTimestamp * 1000).toISOString(),
+        validityPeriod: "30 days",
+        daysRemaining: daysRemaining,
+        status: validityStatus
+      },
+      // ADDED: Blockchain details (same as verify OTP)
+      blockchain: {
+        status: overallStatus,
+        message: getBlockchainMessage(overallStatus, tourist.kyc.status),
+        kycCID: tourist.kycCID,
+        emergencyCID: tourist.emergencyCID,
+        workerStatus: 'running' // Assume worker is running
+      },
+      // Keep existing dashboard-specific fields
       hasProfile: true,
       canCompleteKyc: tourist.kyc.status === 'pending',
       blockchainDetails: {
@@ -525,8 +591,7 @@ export const getDashboard = async (req: Request, res: Response) => {
         successfulTransactions: tourist.onchainTxs.filter(tx => tx.status === 'confirmed').length,
         failedTransactions: tourist.onchainTxs.filter(tx => tx.status === 'failed').length,
         pendingTransactions: tourist.onchainTxs.filter(tx => tx.status === 'pending' || tx.status === 'submitted').length
-      },
-      message
+      }
     });
 
   } catch (error: any) {
@@ -1376,3 +1441,22 @@ export const updateRestrictedZone = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 };
+
+// ADDED: Helper function to get blockchain message
+function getBlockchainMessage(status: string, kycStatus: string): string {
+  switch (status) {
+    case 'pending':
+    case 'registering':
+      return 'Tourist profile created successfully. Blockchain registration will be processed automatically.';
+    case 'active':
+      return 'Tourist profile is fully registered and active on blockchain.';
+    case 'updating':
+      return 'Profile updates are being processed on blockchain.';
+    case 'registration_failed':
+      return 'Blockchain registration failed. Please contact support.';
+    case 'update_failed':
+      return 'Last update failed on blockchain. Please try again.';
+    default:
+      return 'Blockchain status is being updated.';
+  }
+}
