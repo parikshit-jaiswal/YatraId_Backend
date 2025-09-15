@@ -1,17 +1,19 @@
-import express from "express";
+import { Router } from "express";
 import {
-  registerController,
+  registerUserWithTouristAndKYC,
+  verifyCombinedRegistration,
   loginController,
   googleLoginController,
-  verifyRegistrationOTP,
-
 } from "../controllers/auth.controllers";
 
-const router = express.Router();
+const router = Router();
 
-router.post("/register", registerController);
-router.post("/verify-otp", verifyRegistrationOTP);
-router.post("/login", loginController);
-router.post("/google-login", googleLoginController);
+// New combined registration flow
+router.route("/register-with-kyc").post(registerUserWithTouristAndKYC);
+router.route("/verify-combined-registration").post(verifyCombinedRegistration);
+
+// Existing routes
+router.route("/login").post(loginController);
+router.route("/google-login").post(googleLoginController);
 
 export default router;
