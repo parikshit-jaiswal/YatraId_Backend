@@ -27,13 +27,17 @@ export interface ITourist extends Document {
   // Basic Info (collected during registration)
   fullName: string;
   phoneNumber: string;
-  profileImage?: string;
+  profileImage?: string; // ALREADY EXISTS - Profile image URL from Cloudinary
   dateOfBirth?: Date;
   nationality: "indian" | "international" | "pending";
 
   // Unique Tourist ID (generated after KYC verification)
   touristId?: string; // Human-readable ID like "TID-IND-2024-001234"
-  qrCodeData?: string; // QR code for scanning at hotels/checkpoints
+  qrCodeData?: string | {
+    cloudinaryUrl?: string;
+    publicId?: string;
+    scanData?: string;
+  }; // QR code for scanning at hotels/checkpoints
 
   // Blockchain & Storage
   touristIdOnChain: string;
@@ -88,7 +92,7 @@ const TouristSchema = new Schema<ITourist>(
     // Basic Info
     fullName: { type: String, required: true, trim: true },
     phoneNumber: { type: String, required: true, trim: true },
-    profileImage:{ type: String },
+    profileImage: { type: String }, // ALREADY EXISTS - Profile image URL from Cloudinary
     dateOfBirth: { type: Date },
     nationality: {
       type: String,
@@ -96,14 +100,14 @@ const TouristSchema = new Schema<ITourist>(
       default: "pending",
     },
 
-    // Unique Tourist ID (generated after KYC) - REMOVED index: true
+    // Unique Tourist ID (generated after KYC)
     touristId: { type: String, unique: true, sparse: true },
     qrCodeData: {
-      type: mongoose.Schema.Types.Mixed, // Allow flexible structure
+      type: mongoose.Schema.Types.Mixed, // Allow flexible structure for both string and object
       default: null
     },
 
-    // Blockchain & Storage - REMOVED index: true
+    // Blockchain & Storage
     touristIdOnChain: { type: String, unique: true, sparse: true },
     ownerWallet: {
       type: String,
@@ -198,7 +202,7 @@ const TouristSchema = new Schema<ITourist>(
   { timestamps: true }
 );
 
-// KEEP only these index definitions (remove duplicates)
+// Indexes for performance
 TouristSchema.index({ userId: 1 });
 TouristSchema.index({ touristId: 1 });
 TouristSchema.index({ touristIdOnChain: 1 });
