@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@sendgrid/mail": "^8.1.5",
+    "@sendinblue/client": "^3.3.1",
     "@types/qrcode": "^1.5.5",
     "axios": "^1.8.4",
     "bcrypt": "^5.1.1",
@@ -38,10 +39,9 @@
     "mrz": "^4.2.1",
     "multer": "^1.4.5-lts.2",
     "multer-storage-cloudinary": "^4.0.0",
-    "nodemailer": "^6.10.1",
     "nodemon": "^3.1.10",
     "qrcode": "^1.5.4",
-    "resend": "^4.4.1",
+    "resend": "^4.8.0",
     "rimraf": "^3.0.2",
     "socket.io": "^4.8.1"
   },
@@ -55,7 +55,6 @@
     "@types/jsonwebtoken": "^9.0.9",
     "@types/multer": "^1.4.12",
     "@types/node": "^22.14.1",
-    "@types/nodemailer": "^6.4.17",
     "eslint": "^9.25.1",
     "eslint-config-prettier": "^10.1.2",
     "eslint-plugin-prettier": "^5.2.6",

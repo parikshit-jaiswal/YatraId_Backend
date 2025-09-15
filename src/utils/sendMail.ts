@@ -1,105 +1,88 @@
-import nodemailer from 'nodemailer';
+import * as SibApiV3Sdk from '@sendinblue/client';
 
 export const sendOtpEmail = async (email: string, otp: string) => {
   try {
     console.log('📧 Attempting to send OTP email to:', email);
     console.log('🔑 OTP to send:', otp);
-
-    // Check environment variables
-    console.log('Environment check:');
-    console.log('EMAIL_USER exists:', !!process.env.EMAIL_USER);
-    console.log('EMAIL_PASS exists:', !!process.env.EMAIL_PASS);
-    console.log('EMAIL_USER:', process.env.EMAIL_USER);
-    // Don't log EMAIL_PASS for security
-
-    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-      throw new Error('Email configuration missing: EMAIL_USER or EMAIL_PASS not found in environment variables');
+    
+    // Check if API key exists
+    if (!process.env.BREVO_API_KEY) {
+      console.error('❌ BREVO_API_KEY not found in environment variables');
+      throw new Error('BREVO_API_KEY not found in environment variables');
     }
 
-    // FIXED: More robust Gmail SMTP configuration
-    const transporter = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 587,
-      secure: false, // Use STARTTLS
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-      tls: {
-        rejectUnauthorized: false // Allow self-signed certificates
-      },
-      connectionTimeout: 10000, // 10 seconds
-      greetingTimeout: 5000,     // 5 seconds
-      socketTimeout: 10000       // 10 seconds
-    });
+    console.log('✅ BREVO_API_KEY found');
+    console.log('📮 Using Brevo (Sendinblue) for email delivery');
 
-    console.log('📮 Email transporter created successfully');
+    // Initialize Brevo API
+    const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
+    apiInstance.setApiKey(SibApiV3Sdk.TransactionalEmailsApiApiKeys.apiKey, process.env.BREVO_API_KEY);
 
-    // IMPORTANT: Test the connection first
-    console.log('🔍 Testing SMTP connection...');
-    await transporter.verify();
-    console.log('✅ SMTP connection verified successfully');
-
-    const mailOptions = {
-      from: `"YatraID" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: 'YatraID Registration - OTP Verification',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="text-align: center; margin-bottom: 30px;">
-            <h1 style="color: #2563eb; margin: 0;">YatraID</h1>
-            <p style="color: #6b7280; margin: 5px 0;">Digital Tourist Identity Platform</p>
+    const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
+    
+    // Email configuration
+    sendSmtpEmail.sender = { 
+      name: 'YatraID', 
+      email: process.env.FROM_EMAIL || 'parikshitjaiswal82@gmail.com'
+    };
+    sendSmtpEmail.to = [{ email: email }];
+    sendSmtpEmail.subject = 'YatraID Registration - OTP Verification';
+    sendSmtpEmail.htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #ffffff;">
+        <div style="text-align: center; margin-bottom: 30px; border-bottom: 2px solid #e5e7eb; padding-bottom: 20px;">
+          <h1 style="color: #2563eb; margin: 0; font-size: 28px;">🌍 YatraID</h1>
+          <p style="color: #6b7280; margin: 5px 0; font-size: 14px;">Digital Tourist Identity Platform</p>
+        </div>
+        
+        <div style="background: linear-gradient(135deg, #f8fafc 0%, #e5f3ff 100%); border-radius: 12px; padding: 30px; margin-bottom: 20px; border: 1px solid #e5e7eb;">
+          <h2 style="color: #1f2937; margin-top: 0; font-size: 20px;">🔐 Verify Your Registration</h2>
+          <p style="color: #4b5563; font-size: 16px; margin-bottom: 20px;">Enter this OTP to complete your YatraID registration:</p>
+          
+          <div style="text-align: center; margin: 25px 0;">
+            <div style="background: #ffffff; border: 3px solid #3b82f6; border-radius: 12px; padding: 25px; display: inline-block; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+              <h1 style="color: #1f2937; font-size: 36px; letter-spacing: 10px; margin: 0; font-family: 'Courier New', monospace; font-weight: bold;">${otp}</h1>
+            </div>
           </div>
           
-          <div style="background: #f8fafc; border-radius: 8px; padding: 30px; margin-bottom: 20px;">
-            <h2 style="color: #1f2937; margin-top: 0;">Verify Your Registration</h2>
-            <p style="color: #4b5563; font-size: 16px;">Your OTP for YatraID registration is:</p>
-            
-            <div style="text-align: center; margin: 25px 0;">
-              <div style="background: #ffffff; border: 2px dashed #e5e7eb; border-radius: 8px; padding: 20px; display: inline-block;">
-                <h1 style="color: #1f2937; font-size: 32px; letter-spacing: 8px; margin: 0; font-family: monospace;">${otp}</h1>
-              </div>
-            </div>
-            
-            <p style="color: #6b7280; font-size: 14px; margin-bottom: 0;">
-              • This OTP will expire in <strong>10 minutes</strong><br>
-              • Do not share this code with anyone<br>
-              • If you didn't request this, please ignore this email
+          <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 15px; margin-top: 20px;">
+            <p style="color: #92400e; font-size: 14px; margin: 0; text-align: center;">
+              ⏰ <strong>Valid for 10 minutes</strong> | 🔒 <strong>Keep it confidential</strong> | 🚫 <strong>Don't share with anyone</strong>
             </p>
           </div>
-          
-          <div style="text-align: center; color: #9ca3af; font-size: 12px;">
-            <p>© 2025 YatraID - Secure Digital Tourist Identity</p>
-          </div>
         </div>
-      `
-    };
+        
+        <div style="text-align: center; color: #9ca3af; font-size: 12px; border-top: 1px solid #e5e7eb; padding-top: 15px;">
+          <p style="margin: 5px 0;">🛡️ Secure Tourist Identity Platform</p>
+          <p style="margin: 0;">© 2025 YatraID - Powered by Digital Innovation</p>
+        </div>
+      </div>
+    `;
 
-    console.log('📤 Sending email...');
-    const result = await transporter.sendMail(mailOptions);
-    console.log('✅ Email sent successfully:', result.messageId);
+    console.log('📤 Sending email via Brevo...');
+    const result = await apiInstance.sendTransacEmail(sendSmtpEmail);
 
-    return result;
+    console.log('✅ Email sent successfully via Brevo');
+    console.log('📧 Message ID:', result.body.messageId);
+    console.log('📬 Email sent to:', email);
+    
+    return result.body;
 
   } catch (error: any) {
-    console.error('❌ Email sending failed:', error);
+    console.error('❌ Brevo email sending failed:', error);
     console.error('Error details:', {
       message: error.message,
+      name: error.name,
       code: error.code,
-      response: error.response,
-      responseCode: error.responseCode,
-      command: error.command
+      response: error.response?.body
     });
-
-    // More specific error messages
-    if (error.code === 'ETIMEDOUT') {
-      throw new Error('Email service connection timeout. This might be due to network restrictions on your hosting provider.');
-    } else if (error.code === 'EAUTH') {
-      throw new Error('Email authentication failed. Please check your EMAIL_USER and EMAIL_PASS credentials.');
-    } else if (error.code === 'ENOTFOUND') {
-      throw new Error('Gmail SMTP server not found. Please check your internet connection.');
-    } else if (error.responseCode === 535) {
-      throw new Error('Invalid email credentials. For Gmail, use App Password instead of regular password.');
+    
+    // More specific error handling
+    if (error.code === 401) {
+      throw new Error('Brevo authentication failed. Please check your BREVO_API_KEY.');
+    } else if (error.code === 400) {
+      throw new Error('Brevo API error: Invalid request. Please check sender email verification.');
+    } else if (error.response?.body?.message) {
+      throw new Error(`Brevo API error: ${error.response.body.message}`);
     } else {
       throw new Error(`Email sending failed: ${error.message}`);
     }
