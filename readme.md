@@ -1,30 +1,60 @@
 # YatraId Backend API Documentation
 
-## Overview
-YatraId is a comprehensive tourist safety and management system with blockchain integration, family management, incident reporting, and KYC verification capabilities.
+A comprehensive tourist safety and management system built with Node.js, TypeScript, MongoDB, and blockchain integration.
 
-**Base URL:** `http://localhost:3005`
-**Environment:** Development
+## 🚀 Features
 
-## Table of Contents
-- [Authentication](#authentication)
-- [Tourist Management](#tourist-management)
-- [Family Management](#family-management)
-- [KYC Verification](#kyc-verification)
-- [Incident Reporting](#incident-reporting)
-- [Admin Features](#admin-features)
+- **Authentication & Authorization**: JWT-based authentication with Google OAuth support
+- **Tourist Management**: Complete tourist profile management with KYC verification
+- **Family Management**: Bidirectional family relationship tracking
+- **Emergency System**: SOS/Panic alerts with blockchain-secured evidence storage
+- **Incident Reporting**: Comprehensive incident management with e-FIR generation
+- **KYC Verification**: Support for both Indian (Aadhaar) and International (Passport) KYC
+- **Blockchain Integration**: Secure data storage using IPFS and Ethereum
+- **Admin Dashboard**: Complete administrative controls and analytics
 
-## Authentication
+## 🛠️ Tech Stack
 
-### Register User
-**POST** `/api/auth/register`
+- **Backend**: Node.js, TypeScript, Express.js
+- **Database**: MongoDB with Mongoose
+- **Authentication**: JWT, Google OAuth 2.0
+- **Blockchain**: Ethers.js, IPFS
+- **Storage**: Cloudinary for images
+- **Security**: Crypto encryption for sensitive data
+
+## 📚 API Endpoints
+
+### Base URL
+```
+http://localhost:8080/api
+```
+
+## 🔐 Authentication Endpoints
+
+### 1. Combined Registration with KYC
+Register a new user with tourist profile and KYC in one step.
+
+**Endpoint:** `POST /auth/register-with-kyc`
 
 **Request Body:**
 ```json
 {
-  "name": "John Doe",
+  "fullName": "John Doe",
   "email": "john.doe@example.com",
-  "password": "SecurePassword123"
+  "password": "securePassword123",
+  "phoneNumber": "+91-9876543210",
+  "dateOfBirth": "1990-05-15",
+  "emergencyContacts": [
+    {
+      "name": "Jane Doe",
+      "relationship": "spouse",
+      "phoneNumber": "+91-9876543211"
+    }
+  ],
+  "trackingOptIn": true,
+  "kycType": "indian",
+  "aadhaarNumber": "123456789012",
+  "address": "123 Main Street, City, State, 123456"
 }
 ```
 
@@ -32,12 +62,20 @@ YatraId is a comprehensive tourist safety and management system with blockchain 
 ```json
 {
   "success": true,
-  "message": "OTP sent successfully. Please check your email."
+  "message": "Registration initiated! OTP sent to your email. Your Tourist ID will be valid for 30 days from registration.",
+  "email": "john.doe@example.com",
+  "phoneNumber": "+91-9876543210",
+  "kycType": "indian",
+  "validityPeriod": "30 days",
+  "expiresIn": 600,
+  "nextStep": "Verify OTP using /api/auth/verify-combined-registration endpoint"
 }
 ```
 
-### Verify Registration OTP
-**POST** `/api/auth/verify-otp`
+### 2. Verify Combined Registration OTP
+Verify the OTP sent during registration to complete the process.
+
+**Endpoint:** `POST /auth/verify-combined-registration`
 
 **Request Body:**
 ```json
@@ -51,25 +89,38 @@ YatraId is a comprehensive tourist safety and management system with blockchain 
 ```json
 {
   "success": true,
-  "message": "User registered successfully",
-  "user": {
-    "id": "66f1a2b3c4d5e6f7g8h9i0j1",
-    "name": "John Doe",
-    "email": "john.doe@example.com",
-    "walletAddress": "0x742d35Cc6534C0532925a3b8D0C9d3F3b5f8e9F0"
+  "message": "Registration completed successfully! Welcome to YatraId.",
+  "data": {
+    "user": {
+      "_id": "60d5ec49e5b32c1a2c8b4567",
+      "name": "John Doe",
+      "email": "john.doe@example.com",
+      "walletAddress": "0x742d35Cc6634C0532925a3b8D94332E02C35AbC",
+      "kycStatus": "verified",
+      "kycType": "indian"
+    },
+    "tourist": {
+      "_id": "60d5ec49e5b32c1a2c8b4568",
+      "touristId": "TID-IND-2024-000001",
+      "fullName": "John Doe",
+      "nationality": "indian",
+      "validUntil": "2024-10-15T12:00:00.000Z"
+    }
   },
   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 }
 ```
 
-### Login
-**POST** `/api/auth/login`
+### 3. Login
+Standard email/password login.
+
+**Endpoint:** `POST /auth/login`
 
 **Request Body:**
 ```json
 {
   "email": "john.doe@example.com",
-  "password": "SecurePassword123"
+  "password": "securePassword123"
 }
 ```
 
@@ -77,19 +128,18 @@ YatraId is a comprehensive tourist safety and management system with blockchain 
 ```json
 {
   "success": true,
-  "message": "Login successful",
-  "user": {
-    "id": "66f1a2b3c4d5e6f7g8h9i0j1",
-    "name": "John Doe",
-    "email": "john.doe@example.com",
-    "walletAddress": "0x742d35Cc6534C0532925a3b8D0C9d3F3b5f8e9F0"
-  },
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "userId": "60d5ec49e5b32c1a2c8b4567",
+  "walletAddress": "0x742d35Cc6634C0532925a3b8D94332E02C35AbC",
+  "kycStatus": "verified",
+  "kycType": "indian"
 }
 ```
 
-### Google Login
-**POST** `/api/auth/google-login`
+### 4. Google Login
+Login using Google OAuth token.
+
+**Endpoint:** `POST /auth/google-login`
 
 **Request Body:**
 ```json
@@ -98,14 +148,25 @@ YatraId is a comprehensive tourist safety and management system with blockchain 
 }
 ```
 
----
+**Response:**
+```json
+{
+  "success": true,
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "userId": "60d5ec49e5b32c1a2c8b4567",
+  "walletAddress": "0x742d35Cc6634C0532925a3b8D94332E02C35AbC",
+  "kycStatus": "pending"
+}
+```
 
-## Tourist Management
+## 👤 Tourist Management Endpoints
 
-**Authentication Required:** Bearer Token
+*All tourist endpoints require JWT authentication via Authorization header: `Bearer <token>`*
 
-### Register Tourist Profile
-**POST** `/api/tourists/register`
+### 1. Register Tourist Profile
+Create a tourist profile for authenticated user.
+
+**Endpoint:** `POST /tourists/register`
 
 **Request Body:**
 ```json
@@ -117,92 +178,45 @@ YatraId is a comprehensive tourist safety and management system with blockchain 
     {
       "name": "Jane Doe",
       "relationship": "spouse",
-      "phone": "+91-9876543211",
-      "email": "jane.doe@example.com"
+      "phoneNumber": "+91-9876543211"
     }
   ],
   "validUntil": 1735689600,
   "trackingOptIn": true,
-  "ownerWallet": "0x742d35Cc6534C0532925a3b8D0C9d3F3b5f8e9F0"
+  "ownerWallet": "0x742d35Cc6634C0532925a3b8D94332E02C35AbC"
 }
 ```
+
+### 2. Get Tourist Profile
+Get tourist profile by ID.
+
+**Endpoint:** `GET /tourists/:id`
 
 **Response:**
 ```json
 {
   "success": true,
-  "touristId": "66f1a2b3c4d5e6f7g8h9i0j1",
-  "touristIdOnChain": "0x8f7e6d5c4b3a29180716253849576038495a6b7c",
-  "validUntil": 1735693200,
-  "onchainStatus": "pending",
-  "kycStatus": "pending",
-  "isActive": false,
-  "message": "Tourist profile created successfully. Please complete KYC verification to activate your digital tourist ID."
-}
-```
-
-### Get Tourist Dashboard
-**GET** `/api/tourists/dashboard`
-
-**Response:**
-```json
-{
-  "success": true,
-  "user": {
-    "name": "John Doe",
-    "email": "john.doe@example.com",
-    "walletAddress": "0x742d35Cc6534C0532925a3b8D0C9d3F3b5f8e9F0",
-    "kycStatus": "verified",
-    "kycType": "indian"
-  },
-  "tourist": {
-    "id": "66f1a2b3c4d5e6f7g8h9i0j1",
-    "touristIdOnChain": "0x8f7e6d5c4b3a29180716253849576038495a6b7c",
-    "nationality": "indian",
-    "validUntil": "2024-12-31T18:30:00.000Z",
-    "trackingOptIn": true,
-    "kycStatus": "verified",
-    "onchainStatus": "active",
-    "isRegisteredOnChain": true,
-    "canUseBlockchain": true,
-    "panicCount": 0,
-    "activePanics": 0,
-    "createdAt": "2025-09-15T10:30:00.000Z"
-  },
-  "hasProfile": true,
-  "message": "Profile fully active and registered on blockchain."
-}
-```
-
-### Get Tourist Details
-**GET** `/api/tourists/{id}?decrypt=true`
-
-**Response:**
-```json
-{
-  "id": "66f1a2b3c4d5e6f7g8h9i0j1",
-  "touristIdOnChain": "0x8f7e6d5c4b3a29180716253849576038495a6b7c",
-  "ownerWallet": "0x742d35Cc6534C0532925a3b8D0C9d3F3b5f8e9F0",
-  "validUntil": "2024-12-31T18:30:00.000Z",
-  "trackingOptIn": true,
-  "kycData": {
+  "data": {
+    "_id": "60d5ec49e5b32c1a2c8b4568",
+    "touristId": "TID-IND-2024-000001",
     "fullName": "John Doe",
     "phoneNumber": "+91-9876543210",
-    "dateOfBirth": "1990-05-15T00:00:00.000Z"
-  },
-  "emergencyContacts": [
-    {
-      "name": "Jane Doe",
-      "relationship": "spouse",
-      "phone": "+91-9876543211"
-    }
-  ],
-  "onchainStatus": "confirmed"
+    "nationality": "indian",
+    "validUntil": "2024-10-15T12:00:00.000Z",
+    "kyc": {
+      "status": "verified",
+      "method": "digilocker"
+    },
+    "safetyScore": 85,
+    "riskScore": 15
+  }
 }
 ```
 
-### Raise Panic/SOS
-**POST** `/api/tourists/{id}/panic`
+### 3. Raise Panic/SOS Alert
+Emergency SOS alert with location and evidence.
+
+**Endpoint:** `POST /tourists/:id/panic`
 
 **Request Body:**
 ```json
@@ -210,14 +224,14 @@ YatraId is a comprehensive tourist safety and management system with blockchain 
   "location": {
     "latitude": 28.6139,
     "longitude": 77.2090,
-    "address": "Connaught Place, New Delhi, Delhi 110001, India"
+    "address": "India Gate, New Delhi"
   },
   "evidence": {
-    "photos": ["base64_image_data"],
-    "audio": "base64_audio_data",
-    "notes": "Emergency situation - need immediate help"
+    "photos": ["image1_url", "image2_url"],
+    "audio": "audio_recording_url",
+    "notes": "Additional emergency information"
   },
-  "description": "Being followed by unknown person. Feel unsafe."
+  "description": "Emergency situation requiring immediate assistance"
 }
 ```
 
@@ -230,38 +244,37 @@ YatraId is a comprehensive tourist safety and management system with blockchain 
 }
 ```
 
-### Upload Profile Image
-**POST** `/api/tourists/profile-image`
+### 4. Upload Profile Image
+Upload profile picture for tourist.
 
+**Endpoint:** `POST /tourists/profile-image`
 **Content-Type:** `multipart/form-data`
 
 **Form Data:**
-- `profileImage`: Image file (JPEG/PNG)
+- `profileImage`: Image file (max 10MB)
 
 **Response:**
 ```json
 {
   "success": true,
-  "data": {
-    "profileImage": "https://cloudinary.com/image/upload/v1234567890/profile.jpg"
-  },
-  "message": "Profile picture updated successfully"
+  "message": "Profile image uploaded successfully",
+  "imageUrl": "https://cloudinary_url/profile_image.jpg"
 }
 ```
 
----
+## 👨‍👩‍👧‍👦 Family Management Endpoints
 
-## Family Management
+*All family endpoints require JWT authentication*
 
-**Authentication Required:** Bearer Token
+### 1. Create Family Group
+Create a new family group for the current user.
 
-### Create Family Group
-**POST** `/api/family/create`
+**Endpoint:** `POST /family/create`
 
 **Request Body:**
 ```json
 {
-  "familyName": "The Sharma Family",
+  "familyName": "The Doe Family",
   "shareLocation": true,
   "emergencyNotifications": true
 }
@@ -271,53 +284,28 @@ YatraId is a comprehensive tourist safety and management system with blockchain 
 ```json
 {
   "statusCode": 201,
-  "message": "Family group created successfully",
   "data": {
-    "primaryTouristId": "TID-IND-2024-001234",
-    "primaryUserId": "66f1a2b3c4d5e6f7g8h9i0j1",
-    "familyName": "The Sharma Family",
-    "shareLocation": true,
-    "emergencyNotifications": true,
+    "_id": "60d5ec49e5b32c1a2c8b4569",
+    "primaryTouristId": "TID-IND-2024-000001",
+    "familyName": "The Doe Family",
     "members": [],
-    "createdAt": "2025-09-15T10:30:00.000Z"
-  }
-}
-```
-
-### Get Family Details
-**GET** `/api/family/`
-
-**Response:**
-```json
-{
-  "statusCode": 200,
-  "message": "Family details retrieved successfully",
-  "data": {
-    "primaryTouristId": "TID-IND-2024-001234",
-    "familyName": "The Sharma Family",
     "shareLocation": true,
-    "emergencyNotifications": true,
-    "members": [
-      {
-        "touristId": "TID-IND-2024-001235",
-        "fullName": "Priya Sharma",
-        "relationship": "spouse",
-        "phoneNumber": "+91-9876543210",
-        "emergencyContact": true,
-        "addedAt": "2025-09-15T10:35:00.000Z"
-      }
-    ]
-  }
+    "emergencyNotifications": true
+  },
+  "message": "Family group created successfully",
+  "success": true
 }
 ```
 
-### Add Family Member
-**POST** `/api/family/members`
+### 2. Add Family Member
+Add a family member by their touristId.
+
+**Endpoint:** `POST /family/members`
 
 **Request Body:**
 ```json
 {
-  "touristId": "TID-IND-2024-001235",
+  "touristId": "TID-IND-2024-000002",
   "relationship": "spouse",
   "emergencyContact": true
 }
@@ -327,73 +315,114 @@ YatraId is a comprehensive tourist safety and management system with blockchain 
 ```json
 {
   "statusCode": 200,
-  "message": "Family member added successfully",
   "data": {
-    "primaryTouristId": "TID-IND-2024-001234",
+    "family": {
+      "_id": "60d5ec49e5b32c1a2c8b4569",
+      "members": [
+        {
+          "touristId": "TID-IND-2024-000002",
+          "fullName": "Jane Doe",
+          "relationship": "spouse",
+          "emergencyContact": true,
+          "addedAt": "2024-03-15T10:30:00.000Z"
+        }
+      ]
+    }
+  },
+  "message": "Family member added successfully",
+  "success": true
+}
+```
+
+### 3. Get Family Details
+Get current user's family group details.
+
+**Endpoint:** `GET /family`
+
+**Response:**
+```json
+{
+  "statusCode": 200,
+  "data": {
+    "_id": "60d5ec49e5b32c1a2c8b4569",
+    "primaryTouristId": "TID-IND-2024-000001",
+    "familyName": "The Doe Family",
     "members": [
       {
-        "touristId": "TID-IND-2024-001235",
-        "fullName": "Priya Sharma",
+        "touristId": "TID-IND-2024-000002",
+        "fullName": "Jane Doe",
         "relationship": "spouse",
-        "phoneNumber": "+91-9876543210",
+        "phoneNumber": "+91-9876543211",
         "emergencyContact": true,
-        "addedAt": "2025-09-15T10:35:00.000Z"
+        "addedAt": "2024-03-15T10:30:00.000Z"
       }
-    ]
-  }
+    ],
+    "shareLocation": true,
+    "emergencyNotifications": true
+  },
+  "message": "Family details retrieved successfully",
+  "success": true
 }
 ```
 
-### Remove Family Member
-**DELETE** `/api/family/members/{touristId}`
+### 4. Remove Family Member
+Remove a family member by their touristId.
+
+**Endpoint:** `DELETE /family/members/:touristId`
 
 **Response:**
 ```json
 {
   "statusCode": 200,
+  "data": {
+    "removedMember": {
+      "touristId": "TID-IND-2024-000002",
+      "fullName": "Jane Doe",
+      "relationship": "spouse"
+    }
+  },
   "message": "Family member removed successfully",
-  "data": {
-    "primaryTouristId": "TID-IND-2024-001234",
-    "members": []
-  }
+  "success": true
 }
 ```
 
-### Search Tourist for Family
-**GET** `/api/family/search/{touristId}`
+### 5. Search Tourist for Family
+Search for a tourist by their touristId to add to family.
+
+**Endpoint:** `GET /family/search/:touristId`
 
 **Response:**
 ```json
 {
   "statusCode": 200,
-  "message": "Tourist found",
   "data": {
-    "touristId": "TID-IND-2024-001235",
-    "fullName": "Priya Sharma",
-    "phoneNumber": "+91-9876543210",
-    "nationality": "indian",
-    "isActive": true
-  }
+    "touristId": "TID-IND-2024-000002",
+    "fullName": "Jane Doe",
+    "phoneNumber": "+91-9876543211",
+    "canAdd": true
+  },
+  "message": "Tourist found and available for family addition",
+  "success": true
 }
 ```
 
----
+## 🆔 KYC Verification Endpoints
 
-## KYC Verification
+*All KYC endpoints require JWT authentication*
 
-**Authentication Required:** Bearer Token
+### 1. Initiate Indian KYC
+Start KYC verification process for Indian citizens.
 
-### Initiate Indian KYC
-**POST** `/api/kyc/indian/initiate`
+**Endpoint:** `POST /kyc/indian/initiate`
 
 **Request Body:**
 ```json
 {
   "fullName": "John Doe",
-  "phoneNumber": "+91-9876543210",
+  "phoneNumber": "9876543210",
   "dateOfBirth": "1990-05-15",
-  "address": "123 Main Street, New Delhi, 110001",
-  "aadhaarNumber": "1234-5678-9012"
+  "aadhaarNumber": "123456789012",
+  "address": "123 Main Street, New Delhi, 110001"
 }
 ```
 
@@ -401,20 +430,21 @@ YatraId is a comprehensive tourist safety and management system with blockchain 
 ```json
 {
   "success": true,
-  "message": "OTP sent successfully to your registered mobile number",
-  "sessionId": "session_abc123",
-  "phoneNumber": "+91-9876543210"
+  "message": "OTP sent successfully to your registered phone number",
+  "phoneNumber": "9876543210",
+  "expiresIn": 600
 }
 ```
 
-### Verify Indian KYC OTP
-**POST** `/api/kyc/indian/verify-otp`
+### 2. Verify Indian KYC OTP
+Complete Indian KYC verification with OTP.
+
+**Endpoint:** `POST /kyc/indian/verify-otp`
 
 **Request Body:**
 ```json
 {
-  "otp": "123456",
-  "sessionId": "session_abc123"
+  "otp": "123456"
 }
 ```
 
@@ -422,89 +452,85 @@ YatraId is a comprehensive tourist safety and management system with blockchain 
 ```json
 {
   "success": true,
-  "message": "KYC verification completed successfully",
-  "tourist": {
-    "touristId": "TID-IND-2024-001234",
+  "message": "Indian KYC verification completed successfully",
+  "data": {
+    "touristId": "TID-IND-2024-000001",
     "kycStatus": "verified",
     "nationality": "indian",
-    "isActive": true
+    "validUntil": "2024-10-15T12:00:00.000Z"
   }
 }
 ```
 
-### Initiate International KYC
-**POST** `/api/kyc/international/initiate`
+### 3. Initiate International KYC
+Start KYC verification for international tourists.
+
+**Endpoint:** `POST /kyc/international/initiate`
 
 **Request Body:**
 ```json
 {
   "fullName": "John Smith",
-  "phoneNumber": "+1-234-567-8900",
-  "dateOfBirth": "1985-03-20",
-  "nationality": "US",
-  "passportNumber": "AB1234567",
-  "passportExpiryDate": "2030-03-20",
-  "address": "456 Broadway, New York, NY 10001"
+  "phoneNumber": "+1-555-123-4567",
+  "dateOfBirth": "1985-12-25",
+  "passportNumber": "P123456789",
+  "nationality": "american",
+  "passportExpiryDate": "2030-12-25"
 }
 ```
+
+### 4. Get KYC Status
+Get current KYC verification status.
+
+**Endpoint:** `GET /kyc/status`
 
 **Response:**
 ```json
 {
   "success": true,
-  "message": "OTP sent to your email for verification",
-  "sessionId": "session_xyz789"
-}
-```
-
-### Get KYC Status
-**GET** `/api/kyc/status`
-
-**Response:**
-```json
-{
-  "success": true,
-  "kycStatus": {
-    "status": "verified",
-    "method": "digilocker",
-    "nationality": "indian",
-    "touristId": "TID-IND-2024-001234",
-    "verifiedAt": "2025-09-15T10:30:00.000Z"
+  "data": {
+    "kycStatus": "verified",
+    "kycType": "indian",
+    "touristId": "TID-IND-2024-000001",
+    "verifiedAt": "2024-03-15T10:30:00.000Z"
   }
 }
 ```
 
----
+## 📋 Incident Reporting Endpoints
 
-## Incident Reporting
+*All incident endpoints require JWT authentication*
 
-**Authentication Required:** Bearer Token
+### 1. Report Incident
+Report a new incident or emergency.
 
-### Report Incident
-**POST** `/api/incidents/report`
+**Endpoint:** `POST /incidents/report`
 
 **Request Body:**
 ```json
 {
-  "touristId": "66f1a2b3c4d5e6f7g8h9i0j1",
+  "touristId": "60d5ec49e5b32c1a2c8b4568",
   "type": "theft",
   "severity": "high",
   "location": {
     "latitude": 28.6139,
     "longitude": 77.2090,
-    "address": "Connaught Place, New Delhi",
-    "landmark": "Central Park"
+    "address": "India Gate, New Delhi"
   },
-  "dateTime": "2025-09-15T14:30:00.000Z",
-  "description": "Mobile phone stolen while walking in the market area",
+  "dateTime": "2024-03-15T14:30:00.000Z",
+  "description": "Mobile phone and wallet stolen by two individuals on motorcycles",
   "witnesses": [
     {
-      "name": "Witness Name",
+      "name": "Witness 1",
       "contact": "+91-9876543212"
     }
   ],
-  "reportedBy": "self",
-  "evidenceFiles": ["base64_image_evidence"]
+  "reportedBy": {
+    "name": "John Doe",
+    "phoneNumber": "+91-9876543210",
+    "relationship": "self"
+  },
+  "evidenceFiles": ["evidence1_url", "evidence2_url"]
 }
 ```
 
@@ -513,306 +539,186 @@ YatraId is a comprehensive tourist safety and management system with blockchain 
 {
   "success": true,
   "message": "Incident reported successfully",
-  "incident": {
-    "incidentId": "INC-2025-000001",
+  "data": {
+    "incidentId": "FIR-2024-000001",
     "status": "reported",
-    "firNumber": null,
-    "assignedOfficer": null,
-    "createdAt": "2025-09-15T14:35:00.000Z"
+    "reportedAt": "2024-03-15T14:35:00.000Z",
+    "evidenceCID": "QmX1234567890abcdef"
   }
 }
 ```
 
-### Get Incident Details
-**GET** `/api/incidents/{incidentId}`
+### 2. Get Incident Details
+Get details of a specific incident.
+
+**Endpoint:** `GET /incidents/:incidentId`
 
 **Response:**
 ```json
 {
   "success": true,
-  "incident": {
-    "incidentId": "INC-2025-000001",
+  "data": {
+    "incidentId": "FIR-2024-000001",
     "type": "theft",
     "severity": "high",
     "status": "under_investigation",
     "location": {
       "latitude": 28.6139,
       "longitude": 77.2090,
-      "address": "Connaught Place, New Delhi"
+      "address": "India Gate, New Delhi"
     },
-    "description": "Mobile phone stolen while walking in the market area",
-    "firNumber": "FIR-DEL-2025-001234",
-    "assignedOfficer": "Inspector Sharma",
-    "createdAt": "2025-09-15T14:35:00.000Z",
-    "updatedAt": "2025-09-15T15:00:00.000Z"
+    "description": "Mobile phone and wallet stolen by two individuals on motorcycles",
+    "reportedAt": "2024-03-15T14:35:00.000Z",
+    "updatedAt": "2024-03-15T16:20:00.000Z"
   }
 }
 ```
 
----
+## 🔧 Admin Endpoints
 
-## Admin Features
+*All admin endpoints require JWT authentication and admin privileges*
 
-**Authentication Required:** Bearer Token + Admin Role
+### 1. Get All Tourists
+Get list of all registered tourists (Admin only).
 
-### Get All Tourists
-**GET** `/api/tourists/?page=1&limit=20`
+**Endpoint:** `GET /tourists`
 
-**Response:**
-```json
-{
-  "tourists": [
-    {
-      "id": "66f1a2b3c4d5e6f7g8h9i0j1",
-      "fullName": "John Doe",
-      "phoneNumber": "+91-9876543210",
-      "nationality": "indian",
-      "kycStatus": "verified",
-      "isActive": true,
-      "panicCount": 0,
-      "createdAt": "2025-09-15T10:30:00.000Z"
-    }
-  ],
-  "pagination": {
-    "page": 1,
-    "limit": 20,
-    "total": 1,
-    "pages": 1
-  },
-  "summary": {
-    "total": 1,
-    "active": 1,
-    "withPanics": 0
-  }
-}
-```
+### 2. Tourist Analytics
+Get comprehensive analytics for tourists (Admin only).
 
-### Search Tourist
-**GET** `/api/tourists/admin/search?query=TID-IND-2024-001234&searchType=touristId`
+**Endpoint:** `GET /tourists/admin/analytics`
 
-**Response:**
-```json
-{
-  "success": true,
-  "tourist": {
-    "id": "66f1a2b3c4d5e6f7g8h9i0j1",
-    "touristId": "TID-IND-2024-001234",
-    "fullName": "John Doe",
-    "phoneNumber": "+91-9876543210",
-    "nationality": "indian",
-    "kycStatus": "verified",
-    "isActive": true,
-    "panicCount": 0,
-    "hasActivePanics": false,
-    "lastSeen": "2025-09-15T16:30:00.000Z"
-  }
-}
-```
+### 3. SOS Alerts Monitoring
+Monitor all SOS alerts in real-time (Admin only).
 
-### Get SOS Alerts
-**GET** `/api/tourists/admin/sos-alerts?status=active&priority=high`
+**Endpoint:** `GET /tourists/admin/sos-alerts`
 
-**Response:**
-```json
-{
-  "success": true,
-  "sosAlerts": [
-    {
-      "touristId": "TID-IND-2024-001234",
-      "fullName": "John Doe",
-      "phoneNumber": "+91-9876543210",
-      "panic": {
-        "location": {
-          "latitude": 28.6139,
-          "longitude": 77.2090
-        },
-        "timestamp": "2025-09-15T16:30:00.000Z",
-        "onchainStatus": "pending"
-      },
-      "priority": "high",
-      "hoursAgo": 0.5,
-      "needsAttention": true
-    }
-  ],
-  "summary": {
-    "total": 1,
-    "high": 1,
-    "medium": 0,
-    "low": 0,
-    "needingAttention": 1
-  }
-}
-```
+### 4. Heat Map Data
+Get location-based heat map data for tourist activities (Admin only).
 
-### Create Restricted Zone
-**POST** `/api/tourists/admin/restricted-zones`
+**Endpoint:** `GET /tourists/admin/heatmap`
+
+### 5. Create Restricted Zone
+Create a new restricted/dangerous zone (Admin only).
+
+**Endpoint:** `POST /tourists/admin/restricted-zones`
 
 **Request Body:**
 ```json
 {
-  "name": "High Risk Area - Downtown",
+  "name": "High Crime Area",
   "description": "Area with increased criminal activity",
   "coordinates": [
     { "lat": 28.6139, "lng": 77.2090 },
     { "lat": 28.6140, "lng": 77.2091 },
     { "lat": 28.6141, "lng": 77.2092 }
   ],
-  "severity": "high",
-  "isActive": true
+  "severity": "high"
 }
 ```
 
-**Response:**
+## 🔑 Authentication
+
+All protected endpoints require a JWT token in the Authorization header:
+
+```
+Authorization: Bearer <your_jwt_token>
+```
+
+## 📝 Response Format
+
+All API responses follow a consistent format:
+
+**Success Response:**
 ```json
 {
-  "success": true,
-  "zone": {
-    "id": "66f1a2b3c4d5e6f7g8h9i0j1",
-    "name": "High Risk Area - Downtown",
-    "description": "Area with increased criminal activity",
-    "coordinates": [
-      { "lat": 28.6139, "lng": 77.2090 },
-      { "lat": 28.6140, "lng": 77.2091 }
-    ],
-    "severity": "high",
-    "isActive": true,
-    "createdAt": "2025-09-15T16:30:00.000Z"
-  },
-  "message": "Restricted zone created successfully"
+  "statusCode": 200,
+  "data": { ... },
+  "message": "Success message",
+  "success": true
 }
 ```
 
-### Get Tourist Analytics
-**GET** `/api/tourists/admin/analytics?period=7d`
-
-**Response:**
+**Error Response:**
 ```json
 {
-  "success": true,
-  "analytics": {
-    "period": "7d",
-    "dateRange": {
-      "startDate": "2025-09-08T16:30:00.000Z",
-      "endDate": "2025-09-15T16:30:00.000Z"
-    },
-    "totalStats": {
-      "totalTourists": 150,
-      "activeTourists": 120,
-      "verifiedTourists": 110,
-      "trackingOptIns": 90
-    },
-    "registrationTrend": [
-      { "_id": "2025-09-14", "count": 5 },
-      { "_id": "2025-09-15", "count": 8 }
-    ],
-    "kycStats": [
-      { "_id": "verified", "count": 110 },
-      { "_id": "pending", "count": 30 },
-      { "_id": "failed", "count": 10 }
-    ],
-    "panicStats": {
-      "totalPanics": 15,
-      "recentPanics": 3,
-      "touristsWithPanics": 12
-    }
-  }
+  "statusCode": 400,
+  "message": "Error message",
+  "success": false,
+  "error": "Detailed error information"
 }
 ```
 
-## Error Responses
+## 🚨 Error Codes
 
-### Validation Error (400)
-```json
-{
-  "error": "Missing required fields: fullName, phoneNumber, emergencyContacts"
-}
-```
+| Status Code | Description |
+|-------------|-------------|
+| 200 | Success |
+| 201 | Created |
+| 400 | Bad Request |
+| 401 | Unauthorized |
+| 403 | Forbidden |
+| 404 | Not Found |
+| 409 | Conflict |
+| 500 | Internal Server Error |
 
-### Authentication Error (401)
-```json
-{
-  "error": "Unauthorized request"
-}
-```
+## 🔒 Security Features
 
-### Authorization Error (403)
-```json
-{
-  "error": "Access denied"
-}
-```
+- **JWT Authentication**: Secure token-based authentication
+- **Data Encryption**: Sensitive data encrypted before IPFS storage
+- **Blockchain Security**: Immutable evidence storage on blockchain
+- **Input Validation**: Comprehensive request validation
+- **CORS Protection**: Configured CORS for secure cross-origin requests
 
-### Not Found (404)
-```json
-{
-  "error": "Tourist not found"
-}
-```
+## 🌐 Environment Variables
 
-### Server Error (500)
-```json
-{
-  "error": "Internal server error",
-  "details": "Error message (development only)"
-}
-```
-
-## Authentication Headers
-
-For all protected endpoints, include the JWT token in the Authorization header:
-
-```
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-```
-
-## Relationship Types (Family Management)
-- `parent`
-- `spouse`
-- `child`
-- `sibling`
-- `guardian`
-- `other`
-
-## Incident Types
-- `theft`
-- `assault`
-- `harassment`
-- `fraud`
-- `lost_documents`
-- `medical_emergency`
-- `natural_disaster`
-- `other`
-
-## Severity Levels
-- `low`
-- `medium`
-- `high`
-- `critical`
-
-## Environment Variables Required
+Create a `.env` file with the following variables:
 
 ```env
-MONGODB_URI=mongodb://localhost:27017/tourist_safety
-JWT_SECRET=your_jwt_secret
+PORT=8080
+MONGODB_URI=mongodb://localhost:27017/yatraId
+JWT_SECRET=your_jwt_secret_key
 GOOGLE_CLIENT_ID=your_google_client_id
-GOOGLE_CLIENT_SECRET=your_google_client_secret
-CLOUDINARY_CLOUD_NAME=your_cloud_name
-CLOUDINARY_API_KEY=your_api_key
-CLOUDINARY_API_SECRET=your_api_secret
+CLOUDINARY_CLOUD_NAME=your_cloudinary_name
+CLOUDINARY_API_KEY=your_cloudinary_key
+CLOUDINARY_API_SECRET=your_cloudinary_secret
+PINATA_API_KEY=your_pinata_api_key
+PINATA_SECRET_KEY=your_pinata_secret_key
 EMAIL_USER=your_email@gmail.com
-EMAIL_PASS=your_app_password
+EMAIL_PASS=your_email_password
 ```
 
-## Status Codes Summary
+## 🚀 Getting Started
 
-- `200` - Success
-- `201` - Created
-- `400` - Bad Request
-- `401` - Unauthorized
-- `403` - Forbidden
-- `404` - Not Found
-- `500` - Internal Server Error
+1. **Clone the repository**
+```bash
+git clone <repository_url>
+cd YatraId-Backend
+```
+
+2. **Install dependencies**
+```bash
+npm install
+```
+
+3. **Set up environment variables**
+Create a `.env` file with required variables (see above)
+
+4. **Start the development server**
+```bash
+npm run dev
+```
+
+5. **Build for production**
+```bash
+npm run build
+npm start
+```
+
+## 📞 Support
+
+For any questions or issues, please contact the development team or create an issue in the repository.
 
 ---
 
-For more details or support, contact the development team.
+*YatraId Backend - Securing Tourist Safety with Blockchain Technology*
