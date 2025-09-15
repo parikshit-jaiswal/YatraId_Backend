@@ -12,6 +12,7 @@ import kycRoutes from "./routes/kyc.routes";
 import incidentRoutes from "./routes/incident.routes";
 import familyRoutes from "./routes/family.routes";
 import locationRoutes from "./routes/location.routes";
+import testRoutes from "./routes/test.routes";
 
 // Load environment variables
 dotenv.config();
@@ -29,7 +30,7 @@ const io = new Server(httpServer, {
 // Socket.io connection handling
 io.on("connection", (socket) => {
   console.log(`User connected: ${socket.id}`);
-  
+
   socket.on("disconnect", () => {
     console.log(`User disconnected: ${socket.id}`);
   });
@@ -57,17 +58,18 @@ app.use("/api/kyc", kycRoutes);
 app.use("/api/incidents", incidentRoutes);
 app.use("/api/family", familyRoutes);
 app.use("/api/locations", locationRoutes);
+app.use("/api", testRoutes);
 
 // Health check endpoint
 app.get("/health", (req: Request, res: Response) => {
-  res.json({  
+  res.json({
     status: "OK",
     message: "YatraID Backend is running",
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || "development",
     routes: [
       "/api/auth",
-      "/api/tourists", 
+      "/api/tourists",
       "/api/kyc",
       "/api/incidents",
       "/api/family",
@@ -106,26 +108,26 @@ app.get("/", (req: Request, res: Response) => {
 // Global error handling middleware
 app.use((error: any, req: Request, res: Response, next: NextFunction) => {
   console.error("Global error handler:", error);
-  
+
   // Handle different types of errors
   if (error.name === 'ValidationError') {
-    return res.status(400).json({ 
+    return res.status(400).json({
       error: 'Validation Error',
-      details: error.message 
+      details: error.message
     });
   }
-  
+
   if (error.name === 'CastError') {
-    return res.status(400).json({ 
+    return res.status(400).json({
       error: 'Invalid ID format',
-      details: error.message 
+      details: error.message
     });
   }
-  
+
   if (error.code === 11000) {
-    return res.status(400).json({ 
+    return res.status(400).json({
       error: 'Duplicate field value',
-      details: 'A resource with this value already exists' 
+      details: 'A resource with this value already exists'
     });
   }
 
