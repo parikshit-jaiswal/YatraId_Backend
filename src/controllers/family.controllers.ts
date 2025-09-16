@@ -34,11 +34,18 @@ export const createFamily = asyncHandler(async (req: Request, res: Response) => 
     throw new ApiError(400, "Family group already exists for this tourist");
   }
 
+  // Generate family name if not provided
+  let finalFamilyName = familyName;
+  if (!familyName || familyName.trim() === '') {
+    const firstName = currentTourist.fullName.split(' ')[0];
+    finalFamilyName = `${firstName}'s Family`;
+  }
+
   // Create new family
   const family = new Family({
     primaryTouristId: currentTourist.touristId,
     primaryUserId: req.user?._id,
-    familyName,
+    familyName: finalFamilyName,
     shareLocation,
     emergencyNotifications,
     members: []
