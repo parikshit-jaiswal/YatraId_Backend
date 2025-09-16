@@ -31,7 +31,9 @@ export const createFamily = asyncHandler(async (req: Request, res: Response) => 
   // Check if family already exists
   const existingFamily = await Family.findOne({ primaryTouristId: currentTourist.touristId });
   if (existingFamily) {
-    throw new ApiError(400, "Family group already exists for this tourist");
+    return res.status(200).json(
+      new ApiResponse(200, existingFamily, "Family group already exists - returning existing family data")
+    );
   }
 
   // Generate family name if not provided
