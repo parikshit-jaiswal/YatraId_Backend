@@ -453,6 +453,32 @@ export const googleLoginController = async (req: Request, res: Response) => {
   }
 };
 
+export const logoutController = async (req: Request, res: Response) => {
+  try {
+    // Since we're using JWT tokens, logout is mainly handled on the client side
+    // The client should remove the token from storage
+    // Here we can log the logout event or perform any cleanup if needed
+    
+    const userId = req.user?._id;
+    
+    if (userId) {
+      console.log(`📤 User logged out: ${userId} at ${new Date().toISOString()}`);
+    }
+    
+    res.status(200).json({
+      success: true,
+      message: "Logged out successfully. Please remove the token from client storage."
+    });
+    
+  } catch (error: any) {
+    console.error("Logout error:", error);
+    res.status(500).json({ 
+      error: "Logout failed", 
+      details: error.message 
+    });
+  }
+};
+
 // Helper functions remain the same...
 async function generateTouristId(kycType: 'indian' | 'international'): Promise<string> {
   const year = new Date().getFullYear();
