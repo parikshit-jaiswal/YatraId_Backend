@@ -455,10 +455,6 @@ export const googleLoginController = async (req: Request, res: Response) => {
 
 export const logoutController = async (req: Request, res: Response) => {
   try {
-    // Since we're using JWT tokens, logout is mainly handled on the client side
-    // The client should remove the token from storage
-    // Here we can log the logout event or perform any cleanup if needed
-    
     const userId = req.user?._id;
     
     if (userId) {
@@ -479,7 +475,7 @@ export const logoutController = async (req: Request, res: Response) => {
   }
 };
 
-// Helper functions remain the same...
+
 async function generateTouristId(kycType: 'indian' | 'international'): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = kycType === 'indian' ? 'TID-IND' : 'TID-INTL';
