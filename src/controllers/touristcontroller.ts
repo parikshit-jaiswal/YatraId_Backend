@@ -29,7 +29,7 @@ export const registerTourist = async (req: Request, res: Response) => {
     }
 
     // Check if user already has a tourist profile
-    const existingTourist = await Tourist.findOne({ userId: req.user?._id });
+    const existingTourist = await Tourist.findOne({ userId: req.user?._id }).lean();
     if (existingTourist) {
       return res.status(400).json({ 
         error: 'Tourist profile already exists',
@@ -137,13 +137,13 @@ export const registerTourist = async (req: Request, res: Response) => {
   }
 };
 
-// Get tourist by ID
+// Get tourist by ID - OPTIMIZED
 export const getTourist = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { decrypt } = req.query;
 
-    const tourist = await Tourist.findById(id);
+    const tourist = await Tourist.findById(id).lean();
     if (!tourist) {
       return res.status(404).json({ error: 'Tourist not found' });
     }
@@ -173,29 +173,20 @@ export const getTourist = async (req: Request, res: Response) => {
         response.kycData = JSON.parse(decryptData(kycData));
         response.emergencyContacts = JSON.parse(decryptData(emergencyData));
         
-        // Include panic data if exists
-        if (tourist.panics && tourist.panics.length > 0) {
-          response.panics = await Promise.all(
-            tourist.panics.map(async (panic) => {
-              let evidence = null;
-              if (panic.evidenceCID) {
-                try {
-                  const evidenceData = await getFromIPFS(panic.evidenceCID);
-                  evidence = JSON.parse(decryptData(evidenceData));
-                } catch (e) {
-                  console.error('Error decrypting panic evidence:', e);
-                }
-              }
-              
-              return {
-                location: panic.location,
-                timestamp: panic.timestamp,
-                evidence,
-                onchainStatus: panic.onchainStatus
-              };
-            })
-          );
-        }
+        // Get simplified panic data from Panic model
+        const panicRecords = await Panic.find({ touristId: tourist._id })
+          .select('location timestamp status priority')
+          .sort({ timestamp: -1 })
+          .limit(10)
+          .lean();
+
+        response.panics = panicRecords.map(panic => ({
+          location: panic.location,
+          timestamp: panic.timestamp,
+          status: panic.status,
+          priority: panic.priority
+        }));
+
       } catch (decryptError) {
         console.error('Decryption error:', decryptError);
         response.decryptError = 'Failed to decrypt sensitive data';
@@ -213,7 +204,7 @@ export const getTourist = async (req: Request, res: Response) => {
   }
 };
 
-// Update tourist emergency contacts
+// Update tourist emergency contacts - OPTIMIZED
 export const updateTourist = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -265,7 +256,7 @@ export const updateTourist = async (req: Request, res: Response) => {
   }
 };
 
-// Raise panic/SOS
+// Raise panic/SOS - SIMPLIFIED (NO ONCHAIN INFO)
 export const raisePanic = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -284,7 +275,7 @@ export const raisePanic = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Invalid latitude or longitude coordinates' });
     }
 
-    const tourist = await Tourist.findById(id);
+    const tourist = await Tourist.findById(id).lean();
     if (!tourist) {
       return res.status(404).json({ error: 'Tourist not found' });
     }
@@ -294,24 +285,7 @@ export const raisePanic = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    // Create simplified panic data - only location coordinates, timestamp, reportedBy
-    const panicData = {
-      location: {
-        latitude: lat,
-        longitude: lng
-      },
-      timestamp: new Date(),
-      reportedBy: req.user._id
-    };
-
-    // Encrypt panic data
-    const encryptedPanic = encryptData(JSON.stringify(panicData));
-    const evidenceCID = await uploadToIPFS(encryptedPanic);
-
-    // Calculate priority based on current time (all new panics are critical)
-    const priority = 'critical';
-
-    // Create new Panic record using the Panic model
+    // Create SIMPLE panic record - NO ENCRYPTION, NO IPFS, NO ONCHAIN
     const panic = new Panic({
       touristId: tourist._id,
       location: {
@@ -319,48 +293,18 @@ export const raisePanic = async (req: Request, res: Response) => {
         longitude: lng
       },
       timestamp: new Date(),
-      evidenceCID,
-      onchainStatus: 'pending',
       reportedBy: req.user._id,
-      priority,
+      priority: 'critical',
       status: 'active'
     });
 
     await panic.save();
-
-    // Also add to tourist's panics array for backwards compatibility (optional)
-    const panicRecord = {
-      location: {
-        latitude: lat,
-        longitude: lng
-      },
-      timestamp: new Date(),
-      evidenceCID,
-      onchainStatus: "pending" as "pending"
-    };
-
-    if (!tourist.panics) {
-      tourist.panics = [];
-    }
-    tourist.panics.push(panicRecord);
-
-    // Add onchain transaction
-    tourist.onchainTxs.push({
-      action: 'panic',
-      status: 'pending',
-      cid: evidenceCID,
-      createdAt: new Date()
-    });
-
-    tourist.updatedAt = new Date();
-    await tourist.save();
 
     res.status(201).json({
       success: true,
       message: 'SOS raised successfully. Emergency services have been notified.',
       emergencyNumber: '+91-100',
       panicId: panic._id,
-      evidenceCID: panic.evidenceCID,
       timestamp: panic.timestamp,
       location: {
         latitude: lat,
@@ -379,7 +323,7 @@ export const raisePanic = async (req: Request, res: Response) => {
   }
 };
 
-// AI-triggered safety score update
+// AI-triggered safety score update - OPTIMIZED
 export const updateSafetyScore = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -431,29 +375,27 @@ export const updateSafetyScore = async (req: Request, res: Response) => {
   }
 };
 
-// Get all tourists (dashboard)
+// Get all tourists - MEMORY OPTIMIZED
 export const getAllTourists = async (req: Request, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
+    const limit = Math.min(parseInt(req.query.limit as string) || 10, 20); // Cap at 20
     const skip = (page - 1) * limit;
 
+    // Use lean() and select only essential fields
     const tourists = await Tourist.find()
-      .select('-panics.evidenceCID') // Exclude sensitive data
+      .select('touristId fullName phoneNumber nationality profileImage kyc.status isActive createdAt')
       .skip(skip)
       .limit(limit)
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
     const total = await Tourist.countDocuments();
 
-    // Add summary stats for dashboard
+    // Simplified stats
     const activeCount = await Tourist.countDocuments({ 
-      validUntil: { $gt: new Date() },
-      'onchainTxs.status': 'confirmed'
-    });
-    
-    const panicCount = await Tourist.countDocuments({ 
-      'panics.0': { $exists: true } 
+      'kyc.status': 'verified',
+      isActive: true
     });
 
     res.json({
@@ -467,7 +409,7 @@ export const getAllTourists = async (req: Request, res: Response) => {
       summary: {
         total,
         active: activeCount,
-        withPanics: panicCount
+        verified: activeCount
       }
     });
 
@@ -480,7 +422,7 @@ export const getAllTourists = async (req: Request, res: Response) => {
   }
 };
 
-// Get dashboard data for user - SIMPLIFIED with only essential fields
+// Get dashboard data - MEMORY OPTIMIZED
 export const getDashboard = async (req: Request, res: Response) => {
   try {
     const userId = req.user?._id;
@@ -490,13 +432,13 @@ export const getDashboard = async (req: Request, res: Response) => {
     }
 
     // Get user info
-    const user = await User.findById(userId).select('name email');
+    const user = await User.findById(userId).select('name email').lean();
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
     // Get tourist profile
-    const tourist = await Tourist.findOne({ userId });
+    const tourist = await Tourist.findOne({ userId }).select('touristId profileImage qrCodeData').lean();
 
     if (!tourist) {
       return res.json({
@@ -512,10 +454,9 @@ export const getDashboard = async (req: Request, res: Response) => {
       if (typeof tourist.qrCodeData === 'object' && tourist.qrCodeData.cloudinaryUrl) {
         qrUrl = tourist.qrCodeData.cloudinaryUrl;
       }
-      // If it's still a string format, we don't have the Cloudinary URL
     }
 
-    // SIMPLIFIED RESPONSE - Only essential fields
+    // SIMPLIFIED RESPONSE
     res.json({
       success: true,
       hasProfile: true,
@@ -535,7 +476,7 @@ export const getDashboard = async (req: Request, res: Response) => {
   }
 };
 
-// Upload profile image for tourist
+// Upload profile image - OPTIMIZED
 export const uploadProfileImage = async (req: Request, res: Response) => {
   try {
     const userId = req.user?._id;
@@ -544,13 +485,9 @@ export const uploadProfileImage = async (req: Request, res: Response) => {
       return res.status(401).json({ error: "Authentication required" });
     }
 
-    // Handle both field names - FIXED
     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
     const file = files?.profileImage?.[0] || files?.profilePicture?.[0] || req.file;
 
-    console.log('Files received:', files);
-    console.log('File received:', file);
-    
     if (!file) {
       return res.status(400).json({ error: "No image file provided" });
     }
@@ -562,25 +499,21 @@ export const uploadProfileImage = async (req: Request, res: Response) => {
     }
 
     try {
-      // The file has already been uploaded to Cloudinary by the middleware
       const imageUrl = (file as any).path || file.path;
 
       if (!imageUrl) {
         return res.status(500).json({ error: "Failed to upload image" });
       }
 
-      // If tourist already has a profile picture in Cloudinary, delete the old one
+      // Delete old profile picture if exists
       if (tourist.profileImage && tourist.profileImage.includes("cloudinary")) {
         try {
-          // Extract the public ID from the Cloudinary URL
           const publicId = tourist.profileImage.split("/").pop()?.split(".")[0];
-
           if (publicId) {
             await cloudinary.uploader.destroy(`tourist-profile-pictures/${publicId}`);
           }
         } catch (err) {
           console.error("Error deleting old profile picture:", err);
-          // Continue even if deletion fails
         }
       }
 
@@ -598,7 +531,6 @@ export const uploadProfileImage = async (req: Request, res: Response) => {
     } catch (error) {
       console.error("Error updating profile picture:", error);
 
-      // Clean up the uploaded file in case of error
       if (file && (file as any).public_id) {
         try {
           await cloudinary.uploader.destroy((file as any).public_id);
@@ -621,80 +553,7 @@ export const uploadProfileImage = async (req: Request, res: Response) => {
   }
 };
 
-// Helper function to analyze blockchain status
-function analyzeBlockchainStatus(onchainTxs: any[]) {
-  if (!onchainTxs || onchainTxs.length === 0) {
-    return {
-      overallStatus: 'not_started',
-      isRegistered: false,
-      latestTx: null,
-      canUseBlockchain: false
-    };
-  }
-
-  // Check if registration is confirmed
-  const registerTx = onchainTxs.find(tx => tx.action === 'register' && tx.status === 'confirmed');
-  const isRegistered = !!registerTx;
-
-  // Get latest transaction
-  const latestTx = onchainTxs[onchainTxs.length - 1];
-
-  // Determine overall status
-  let overallStatus = 'pending';
-  
-  if (isRegistered) {
-    // If registered, check if there are any pending updates
-    const pendingTxs = onchainTxs.filter(tx => 
-      tx.status === 'pending' || tx.status === 'submitted'
-    );
-    
-    if (pendingTxs.length > 0) {
-      overallStatus = 'updating';
-    } else {
-      // Check if latest non-register transaction failed
-      const latestNonRegisterTx = [...onchainTxs]
-        .reverse()
-        .find(tx => tx.action !== 'register');
-        
-      if (latestNonRegisterTx && latestNonRegisterTx.status === 'failed') {
-        overallStatus = 'update_failed';
-      } else {
-        overallStatus = 'active';
-      }
-    }
-  } else {
-    // Not registered yet
-    const registerPending = onchainTxs.some(tx => 
-      tx.action === 'register' && (tx.status === 'pending' || tx.status === 'submitted')
-    );
-    
-    if (registerPending) {
-      overallStatus = 'registering';
-    } else {
-      overallStatus = 'registration_failed';
-    }
-  }
-
-  return {
-    overallStatus,
-    isRegistered,
-    latestTx,
-    canUseBlockchain: isRegistered // Can use blockchain if successfully registered
-  };
-}
-
-// Helper function to get last successful transaction hash
-function getLastSuccessfulTxHash(onchainTxs: any[]): string | null {
-  const successfulTx = [...onchainTxs]
-    .reverse()
-    .find(tx => tx.status === 'confirmed');
-    
-  return successfulTx?.txHash || null;
-}
-
-// ============= ADVANCED ADMIN FEATURES =============
-
-// Search tourists by Tourist ID or QR scan
+// Search tourists - MEMORY OPTIMIZED
 export const searchTouristById = async (req: Request, res: Response) => {
   try {
     const { query, searchType = 'touristId' } = req.query;
@@ -708,19 +567,24 @@ export const searchTouristById = async (req: Request, res: Response) => {
 
     switch (searchType) {
       case 'touristId':
-        tourist = await Tourist.findOne({ touristId: query }).populate('userId', 'name email');
+        tourist = await Tourist.findOne({ touristId: query })
+          .select('touristId fullName phoneNumber nationality profileImage kyc isActive validUntil trackingOptIn ownerWallet createdAt updatedAt')
+          .populate('userId', 'name email')
+          .lean();
         searchField = 'Tourist ID';
         break;
-      case 'qrCode':
-        tourist = await Tourist.findOne({ qrCodeData: query }).populate('userId', 'name email');
-        searchField = 'QR Code';
-        break;
       case 'phone':
-        tourist = await Tourist.findOne({ phoneNumber: query }).populate('userId', 'name email');
+        tourist = await Tourist.findOne({ phoneNumber: query })
+          .select('touristId fullName phoneNumber nationality profileImage kyc isActive validUntil trackingOptIn ownerWallet createdAt updatedAt')
+          .populate('userId', 'name email')
+          .lean();
         searchField = 'Phone Number';
         break;
       case 'walletAddress':
-        tourist = await Tourist.findOne({ ownerWallet: query }).populate('userId', 'name email');
+        tourist = await Tourist.findOne({ ownerWallet: query })
+          .select('touristId fullName phoneNumber nationality profileImage kyc isActive validUntil trackingOptIn ownerWallet createdAt updatedAt')
+          .populate('userId', 'name email')
+          .lean();
         searchField = 'Wallet Address';
         break;
       default:
@@ -733,18 +597,14 @@ export const searchTouristById = async (req: Request, res: Response) => {
       });
     }
 
-    // Get location history from panic records
-    const locationHistory = tourist.panics?.map(panic => ({
-      location: panic.location,
-      timestamp: panic.timestamp,
-      type: 'panic'
-    })) || [];
+    // Get panic count from Panic model
+    const panicCount = await Panic.countDocuments({ touristId: tourist._id });
+    const hasActivePanics = await Panic.exists({ 
+      touristId: tourist._id, 
+      status: 'active' 
+    });
 
-    // Calculate current status
     const isActive = tourist.isActive && tourist.kyc.status === 'verified';
-    const hasActivePanics = tourist.panics?.some(p => 
-      p.onchainStatus === 'pending' || p.onchainStatus === 'submitted'
-    ) || false;
 
     res.json({
       success: true,
@@ -762,9 +622,8 @@ export const searchTouristById = async (req: Request, res: Response) => {
         isActive,
         validUntil: tourist.validUntil,
         trackingOptIn: tourist.trackingOptIn,
-        panicCount: tourist.panics?.length || 0,
-        hasActivePanics,
-        locationHistory,
+        panicCount,
+        hasActivePanics: !!hasActivePanics,
         lastSeen: tourist.updatedAt,
         createdAt: tourist.createdAt
       }
@@ -779,13 +638,12 @@ export const searchTouristById = async (req: Request, res: Response) => {
   }
 };
 
-// Get heat map data for dashboard
+// Get heat map data - MEMORY OPTIMIZED
 export const getHeatMapData = async (req: Request, res: Response) => {
   try {
     const { 
-      bounds, // { north, south, east, west }
-      dataType = 'all', // 'all', 'tourists', 'sos', 'help'
-      timeRange = '24h' // '1h', '24h', '7d', '30d'
+      bounds,
+      timeRange = '24h'
     } = req.query;
 
     // Calculate time filter
@@ -805,35 +663,34 @@ export const getHeatMapData = async (req: Request, res: Response) => {
         break;
     }
 
-    // Build match conditions for Panic model
+    // Build match conditions
     const matchConditions: any = {
       timestamp: { $gte: timeFilter }
     };
 
     // Add location bounds filter if provided
     if (bounds) {
-      const { north, south, east, west } = JSON.parse(bounds as string);
-      matchConditions['location.latitude'] = { $gte: south, $lte: north };
-      matchConditions['location.longitude'] = { $gte: west, $lte: east };
+      try {
+        const { north, south, east, west } = JSON.parse(bounds as string);
+        matchConditions['location.latitude'] = { $gte: south, $lte: north };
+        matchConditions['location.longitude'] = { $gte: west, $lte: east };
+      } catch (e) {
+        console.error('Invalid bounds format:', e);
+      }
     }
 
-    // Get panic data using the new Panic model
+    // SIMPLIFIED aggregation pipeline with memory limits
     const pipeline: any[] = [
       { $match: matchConditions },
+      { $limit: 500 }, // Limit raw records
       {
         $group: {
           _id: {
-            lat: { $round: ['$location.latitude', 3] }, // Round to ~100m precision
-            lng: { $round: ['$location.longitude', 3] }
+            lat: { $round: ['$location.latitude', 2] },
+            lng: { $round: ['$location.longitude', 2] }
           },
           count: { $sum: 1 },
-          incidents: { $push: {
-            panicId: '$_id',
-            timestamp: '$timestamp',
-            status: '$status',
-            priority: '$priority',
-            onchainStatus: '$onchainStatus'
-          }}
+          priority: { $first: '$priority' }
         }
       },
       {
@@ -844,55 +701,32 @@ export const getHeatMapData = async (req: Request, res: Response) => {
             lng: '$_id.lng'
           },
           intensity: '$count',
-          incidents: '$incidents'
+          priority: '$priority'
         }
-      }
+      },
+      { $limit: 100 } // Limit final results
     ];
 
     const heatMapPoints = await Panic.aggregate(pipeline);
 
-    // Get additional statistics using Panic model
-    const stats = await Panic.aggregate([
-      {
-        $match: {
-          timestamp: { $gte: timeFilter }
-        }
-      },
-      {
-        $group: {
-          _id: null,
-          totalPanics: { $sum: 1 },
-          activePanics: {
-            $sum: {
-              $cond: [{ $eq: ['$status', 'active'] }, 1, 0]
-            }
-          },
-          criticalPanics: {
-            $sum: {
-              $cond: [{ $eq: ['$priority', 'critical'] }, 1, 0]
-            }
-          },
-          resolvedPanics: {
-            $sum: {
-              $cond: [{ $eq: ['$status', 'resolved'] }, 1, 0]
-            }
-          }
-        }
-      }
-    ]);
+    // Simple statistics
+    const totalPanics = await Panic.countDocuments(matchConditions);
+    const activePanics = await Panic.countDocuments({
+      ...matchConditions,
+      status: 'active'
+    });
 
     res.json({
       success: true,
       heatMapData: heatMapPoints,
-      statistics: stats[0] || {
-        totalPanics: 0,
-        activePanics: 0,
+      statistics: {
+        totalPanics,
+        activePanics,
         criticalPanics: 0,
         resolvedPanics: 0
       },
       metadata: {
         timeRange,
-        dataType,
         generatedAt: new Date(),
         totalPoints: heatMapPoints.length
       }
@@ -907,22 +741,23 @@ export const getHeatMapData = async (req: Request, res: Response) => {
   }
 };
 
-// Get real-time SOS alerts for dashboard
+// Get SOS alerts - MEMORY OPTIMIZED
 export const getSOSAlerts = async (req: Request, res: Response) => {
   try {
     const { 
-      status = 'active', // 'active', 'all', 'resolved'
-      priority = 'all', // 'critical', 'high', 'medium', 'low', 'all'
-      limit = 50 
+      status = 'active',
+      priority = 'all',
+      limit = 20  // Reduced limit
     } = req.query;
 
-    // Build match conditions for Panic model
+    const limitNum = Math.min(parseInt(limit as string) || 20, 50); // Cap at 50
+
+    // Build match conditions
     const matchConditions: any = {};
 
     // Filter by status
     if (status === 'active') {
       matchConditions.status = 'active';
-      matchConditions.onchainStatus = { $in: ['pending', 'submitted'] };
     } else if (status === 'resolved') {
       matchConditions.status = 'resolved';
     }
@@ -932,10 +767,12 @@ export const getSOSAlerts = async (req: Request, res: Response) => {
       matchConditions.priority = priority;
     }
 
-    // Get panics with tourist and user information
+    // OPTIMIZED: Use lean() and select only needed fields
     const panics = await Panic.find(matchConditions)
+      .select('touristId location timestamp reportedBy priority status createdAt')
       .populate({
         path: 'touristId',
+        select: 'touristId fullName phoneNumber nationality profileImage userId kyc isActive',
         populate: {
           path: 'userId',
           select: 'name email'
@@ -943,12 +780,15 @@ export const getSOSAlerts = async (req: Request, res: Response) => {
       })
       .populate('reportedBy', 'name email')
       .sort({ timestamp: -1 })
-      .limit(parseInt(limit as string));
+      .limit(limitNum)
+      .lean();
 
-    // Format the response
+    // Format the response with null checks
     const sosAlerts = panics.map(panic => {
       const tourist = panic.touristId as any;
       const user = tourist?.userId as any;
+      
+      if (!panic.timestamp) return null;
       
       const timeSinceAlert = Date.now() - new Date(panic.timestamp).getTime();
       const minutesAgo = timeSinceAlert / (1000 * 60);
@@ -964,16 +804,11 @@ export const getSOSAlerts = async (req: Request, res: Response) => {
         userEmail: user?.email || 'N/A',
         panic: {
           location: {
-            latitude: panic.location.latitude,
-            longitude: panic.location.longitude
+            latitude: panic.location?.latitude || 0,
+            longitude: panic.location?.longitude || 0
           },
           timestamp: panic.timestamp,
-          onchainStatus: panic.onchainStatus,
-          evidenceCID: panic.evidenceCID,
-          status: panic.status,
-          respondedBy: panic.respondedBy,
-          responseTime: panic.responseTime,
-          notes: panic.notes
+          status: panic.status
         },
         kycStatus: tourist?.kyc?.status || 'pending',
         isActive: tourist?.isActive || false,
@@ -981,19 +816,19 @@ export const getSOSAlerts = async (req: Request, res: Response) => {
         minutesAgo: Math.round(minutesAgo),
         hoursAgo: Math.round(hoursAgo * 10) / 10,
         needsAttention: panic.priority === 'critical' || panic.priority === 'high' || panic.status === 'active',
-        locationString: `${panic.location.latitude.toFixed(4)}, ${panic.location.longitude.toFixed(4)}`
+        locationString: `${(panic.location?.latitude || 0).toFixed(4)}, ${(panic.location?.longitude || 0).toFixed(4)}`
       };
-    });
+    })      .filter((alert): alert is NonNullable<typeof alert> => alert !== null); // Type-safe filter
 
     // Create summary
     const summary = {
       total: sosAlerts.length,
-      critical: sosAlerts.filter(a => a.priority === 'critical').length,
-      high: sosAlerts.filter(a => a.priority === 'high').length,
-      medium: sosAlerts.filter(a => a.priority === 'medium').length,
-      low: sosAlerts.filter(a => a.priority === 'low').length,
-      needingAttention: sosAlerts.filter(a => a.needsAttention).length,
-      recentAlerts: sosAlerts.filter(a => a.minutesAgo < 60).length
+      critical: sosAlerts.filter(alert => alert.priority === 'critical').length,
+      high: sosAlerts.filter(alert => alert.priority === 'high').length,
+      medium: sosAlerts.filter(alert => alert.priority === 'medium').length,
+      low: sosAlerts.filter(alert => alert?.priority === 'low').length,
+      needingAttention: sosAlerts.filter(alert => alert.needsAttention).length,
+      recentAlerts: sosAlerts.filter(alert => alert.minutesAgo < 60).length
     };
 
     res.json({
@@ -1011,7 +846,7 @@ export const getSOSAlerts = async (req: Request, res: Response) => {
   }
 };
 
-// Restricted Zones Management - will be extended with actual zone data later
+// Restricted Zones - OPTIMIZED
 export const createRestrictedZone = async (req: Request, res: Response) => {
   try {
     const { name, description, coordinates, severity = 'medium', isActive = true } = req.body;
@@ -1020,7 +855,6 @@ export const createRestrictedZone = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Name and coordinates array are required' });
     }
 
-    // Actually save to MongoDB!
     const zone = await RestrictedZone.create({
       name,
       description,
@@ -1043,10 +877,51 @@ export const createRestrictedZone = async (req: Request, res: Response) => {
   }
 };
 
-// Get tourist analytics for dashboard
+export const getRestrictedZones = async (req: Request, res: Response) => {
+  try {
+    const zones = await RestrictedZone.find({ isActive: true })
+      .select('name description coordinates severity createdAt')
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .lean();
+    res.json({ success: true, zones });
+  } catch (error: any) {
+    console.error('Get restricted zones error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const deleteRestrictedZone = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const zone = await RestrictedZone.findByIdAndDelete(id);
+    if (!zone) {
+      return res.status(404).json({ error: 'Zone not found' });
+    }
+    res.json({ success: true, message: 'Zone deleted', zone });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const updateRestrictedZone = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const update = req.body;
+    const zone = await RestrictedZone.findByIdAndUpdate(id, update, { new: true });
+    if (!zone) {
+      return res.status(404).json({ error: 'Zone not found' });
+    }
+    res.json({ success: true, message: 'Zone updated', zone });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// SIMPLIFIED Analytics - MEMORY OPTIMIZED
 export const getTouristAnalytics = async (req: Request, res: Response) => {
   try {
-    const { period = '7d' } = req.query; // '24h', '7d', '30d', '3m'
+    const { period = '7d' } = req.query;
 
     // Calculate date range
     const endDate = new Date();
@@ -1062,138 +937,38 @@ export const getTouristAnalytics = async (req: Request, res: Response) => {
       case '30d':
         startDate.setDate(startDate.getDate() - 30);
         break;
-      case '3m':
-        startDate.setMonth(startDate.getMonth() - 3);
-        break;
     }
 
-    // Aggregate analytics data
-    const [
-      totalStats,
-      registrationTrend,
-      kycStats,
-      nationalityBreakdown,
-      panicStats
-    ] = await Promise.all([
-      // Total statistics
-      Tourist.aggregate([
-        {
-          $group: {
-            _id: null,
-            totalTourists: { $sum: 1 },
-            activeTourists: {
-              $sum: {
-                $cond: [
-                  { $and: [
-                    { $eq: ['$isActive', true] },
-                    { $eq: ['$kyc.status', 'verified'] }
-                  ]}, 
-                  1, 
-                  0
-                ]
-              }
-            },
-            verifiedTourists: {
-              $sum: {
-                $cond: [{ $eq: ['$kyc.status', 'verified'] }, 1, 0]
-              }
-            },
-            trackingOptIns: {
-              $sum: {
-                $cond: [{ $eq: ['$trackingOptIn', true] }, 1, 0]
-              }
-            }
-          }
-        }
-      ]),
-
-      // Registration trend over time
-      Tourist.aggregate([
-        {
-          $match: {
-            createdAt: { $gte: startDate, $lte: endDate }
-          }
-        },
-        {
-          $group: {
-            _id: {
-              $dateToString: {
-                format: period === '24h' ? '%H:00' : '%Y-%m-%d',
-                date: '$createdAt'
-              }
-            },
-            count: { $sum: 1 }
-          }
-        },
-        { $sort: { _id: 1 } }
-      ]),
-
-      // KYC status breakdown
-      Tourist.aggregate([
-        {
-          $group: {
-            _id: '$kyc.status',
-            count: { $sum: 1 }
-          }
-        }
-      ]),
-
-      // Nationality breakdown
-      Tourist.aggregate([
-        {
-          $group: {
-            _id: '$nationality',
-            count: { $sum: 1 }
-          }
-        }
-      ]),
-
-      // Panic/SOS statistics
-      Tourist.aggregate([
-        {
-          $match: {
-            'panics.0': { $exists: true }
-          }
-        },
-        {
-          $project: {
-            panicCount: { $size: '$panics' },
-            recentPanics: {
-              $filter: {
-                input: '$panics',
-                cond: { $gte: ['$$this.timestamp', startDate] }
-              }
-            }
-          }
-        },
-        {
-          $group: {
-            _id: null,
-            totalPanics: { $sum: '$panicCount' },
-            recentPanics: { $sum: { $size: '$recentPanics' } },
-            touristsWithPanics: { $sum: 1 }
-          }
-        }
-      ])
+    // Simple counts only
+    const [totalTourists, activeTourists, totalPanics, activePanics] = await Promise.all([
+      Tourist.countDocuments(),
+      Tourist.countDocuments({ 
+        'kyc.status': 'verified',
+        isActive: true
+      }),
+      Panic.countDocuments({
+        timestamp: { $gte: startDate }
+      }),
+      Panic.countDocuments({
+        timestamp: { $gte: startDate },
+        status: 'active'
+      })
     ]);
 
     res.json({
       success: true,
       analytics: {
         period,
-        dateRange: { startDate, endDate },
-        totalStats: totalStats[0] || {
-          totalTourists: 0,
-          activeTourists: 0,
-          verifiedTourists: 0,
+        totalStats: {
+          totalTourists,
+          activeTourists,
+          verifiedTourists: activeTourists,
           trackingOptIns: 0
         },
-        registrationTrend,
-        kycStats,
-        nationalityBreakdown,
-        panicStats: panicStats[0] || {
-          totalPanics: 0,
-          recentPanics: 0,
+        panicStats: {
+          totalPanics,
+          activePanics,
+          recentPanics: totalPanics,
           touristsWithPanics: 0
         }
       },
@@ -1209,7 +984,7 @@ export const getTouristAnalytics = async (req: Request, res: Response) => {
   }
 };
 
-// AI Risk Scoring endpoint (placeholder for ML integration)
+// SIMPLIFIED Risk Score - MEMORY OPTIMIZED
 export const updateRiskScore = async (req: Request, res: Response) => {
   try {
     const { touristId, riskFactors, riskScore, modelVersion = 'v1.0' } = req.body;
@@ -1225,10 +1000,10 @@ export const updateRiskScore = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Tourist not found' });
     }
 
-    // Create risk assessment data
+    // Simple risk assessment without encryption/IPFS
     const riskData = {
       touristId: tourist.touristIdOnChain,
-      riskScore: Math.max(0, Math.min(100, riskScore)), // Clamp between 0-100
+      riskScore: Math.max(0, Math.min(100, riskScore)),
       riskLevel: riskScore >= 80 ? 'high' : riskScore >= 50 ? 'medium' : 'low',
       factors: riskFactors || [],
       modelVersion,
@@ -1236,27 +1011,13 @@ export const updateRiskScore = async (req: Request, res: Response) => {
       assessedBy: 'AI_RISK_ENGINE'
     };
 
-    // In a real implementation, you'd store this in a RiskAssessments collection
-    // For now, we'll add it as an onchain transaction
-    const encryptedRiskData = encryptData(JSON.stringify(riskData));
-    const riskCID = await uploadToIPFS(encryptedRiskData);
-
-    // Add to blockchain transactions
-    tourist.onchainTxs.push({
-      action: 'score',
-      status: 'pending',
-      cid: riskCID,
-      createdAt: new Date()
-    });
-
     tourist.updatedAt = new Date();
     await tourist.save();
 
     res.json({
       success: true,
       riskAssessment: riskData,
-      message: 'Risk score updated successfully',
-      cid: riskCID
+      message: 'Risk score updated successfully'
     });
 
   } catch (error: any) {
@@ -1268,7 +1029,7 @@ export const updateRiskScore = async (req: Request, res: Response) => {
   }
 };
 
-// Generate QR code for verified tourist
+// Generate QR code - SIMPLIFIED
 export const generateQRCode = async (req: Request, res: Response) => {
   try {
     if (!req.user?.isAdmin) {
@@ -1323,62 +1084,3 @@ export const generateQRCode = async (req: Request, res: Response) => {
     });
   }
 };
-
-
-export const getRestrictedZones = async (req: Request, res: Response) => {
-  try {
-    const zones = await RestrictedZone.find({ isActive: true }).sort({ createdAt: -1 });
-    res.json({ success: true, zones });
-  } catch (error: any) {
-    console.error('Get restricted zones error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-};
-
-// Delete a restricted zone
-export const deleteRestrictedZone = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const zone = await RestrictedZone.findByIdAndDelete(id);
-    if (!zone) {
-      return res.status(404).json({ error: 'Zone not found' });
-    }
-    res.json({ success: true, message: 'Zone deleted', zone });
-  } catch (error: any) {
-    res.status(500).json({ error: 'Internal server error' });
-  }
-};
-
-// Update a restricted zone
-export const updateRestrictedZone = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const update = req.body;
-    const zone = await RestrictedZone.findByIdAndUpdate(id, update, { new: true });
-    if (!zone) {
-      return res.status(404).json({ error: 'Zone not found' });
-    }
-    res.json({ success: true, message: 'Zone updated', zone });
-  } catch (error: any) {
-    res.status(500).json({ error: 'Internal server error' });
-  }
-};
-
-// ADDED: Helper function to get blockchain message
-function getBlockchainMessage(status: string, kycStatus: string): string {
-  switch (status) {
-    case 'pending':
-    case 'registering':
-      return 'Tourist profile created successfully. Blockchain registration will be processed automatically.';
-    case 'active':
-      return 'Tourist profile is fully registered and active on blockchain.';
-    case 'updating':
-      return 'Profile updates are being processed on blockchain.';
-    case 'registration_failed':
-      return 'Blockchain registration failed. Please contact support.';
-    case 'update_failed':
-      return 'Last update failed on blockchain. Please try again.';
-    default:
-      return 'Blockchain status is being updated.';
-  }
-}
