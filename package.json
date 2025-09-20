@@ -12,7 +12,7 @@
     "copy-abis": "node -e \"const fs = require('fs'); const path = require('path'); fs.mkdirSync('dist/abis', {recursive: true}); fs.copyFileSync('src/abis/Tourist.json', 'dist/abis/Tourist.json');\"",
     "worker": "node dist/worker/onchainWorker.js",
     "dev:worker": "nodemon src/worker/onchainWorker.ts",
-    "render-start": "npm run build && npm run start",
+    "render-start": "NODE_OPTIONS='--max-old-space-size=4096' npm run build && npm run start",
     "clean": "rimraf dist",
     "build:clean": "npm run clean && npm run build",
     "debug": "ls -la dist/ && node -e \"console.log('Files in dist:'); require('fs').readdirSync('./dist').forEach(f => console.log('  -', f))\""
