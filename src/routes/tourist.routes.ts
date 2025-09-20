@@ -8,7 +8,7 @@ import {
   getAllTourists,
   getDashboard,
   uploadProfileImage,
-  // New admin endpoints
+  // Admin endpoints
   searchTouristById,
   getHeatMapData,
   getSOSAlerts,
@@ -18,7 +18,10 @@ import {
   generateQRCode,
   getRestrictedZones,
   deleteRestrictedZone,
-  updateRestrictedZone
+  updateRestrictedZone,
+  // New panic management endpoints
+  // updatePanicStatus,
+  // getPanicDetails
 } from "../controllers/touristcontroller"; 
 import { verifyJWT } from "../middlewares/auth.middleware"; 
 import { uploadProfilePicture } from "../middlewares/upload.middleware"; 
@@ -36,7 +39,7 @@ router.route('/:id').put(verifyJWT, updateTourist);
 router.route('/:id/panic').post(verifyJWT, raisePanic);
 router.route('/:id/safety-score').post(verifyJWT, updateSafetyScore);
 
-// Profile image upload route - FIXED: Accept both field names
+// Profile image upload route
 router.route('/profile-image').post(
   verifyJWT, 
   uploadProfilePicture.fields([
@@ -54,6 +57,10 @@ router.route('/admin/analytics').get(verifyJWT, getTouristAnalytics);
 // Heat maps and SOS monitoring  
 router.route('/admin/heatmap').get(verifyJWT, getHeatMapData);
 router.route('/admin/sos-alerts').get(verifyJWT, getSOSAlerts);
+
+// ============= NEW PANIC MANAGEMENT ROUTES =============
+// router.route('/admin/panic/:panicId').get(verifyJWT, getPanicDetails);
+// router.route('/admin/panic/:panicId/status').put(verifyJWT, updatePanicStatus);
 
 // Restricted zones management
 router.route('/admin/restricted-zones').post(verifyJWT, createRestrictedZone);

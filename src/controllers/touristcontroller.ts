@@ -6,6 +6,7 @@ import { uploadToIPFS, getFromIPFS } from '../utils/ipfs';
 import { ethers } from 'ethers';
 import cloudinary from '../config/cloudinary';
 import RestrictedZone from '../models/RestrictedZone';
+import Panic from '../models/Panic';
 
 // Register a new tourist
 export const registerTourist = async (req: Request, res: Response) => {
@@ -268,10 +269,19 @@ export const updateTourist = async (req: Request, res: Response) => {
 export const raisePanic = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { location, evidence, description } = req.body;
+    const { location } = req.body;
 
-    if (!location) {
-      return res.status(400).json({ error: 'Location is required' });
+    // Validate location has latitude and longitude
+    if (!location || !location.latitude || !location.longitude) {
+      return res.status(400).json({ error: 'Location with latitude and longitude is required' });
+    }
+
+    // Validate latitude and longitude are valid numbers
+    const lat = parseFloat(location.latitude);
+    const lng = parseFloat(location.longitude);
+
+    if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      return res.status(400).json({ error: 'Invalid latitude or longitude coordinates' });
     }
 
     const tourist = await Tourist.findById(id);
@@ -284,24 +294,46 @@ export const raisePanic = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    // Create comprehensive panic data
+    // Create simplified panic data - only location coordinates, timestamp, reportedBy
     const panicData = {
-      location,
-      evidence,
-      description,
+      location: {
+        latitude: lat,
+        longitude: lng
+      },
       timestamp: new Date(),
-      reportedBy: req.user._id,
-      deviceInfo: req.headers['user-agent'],
-      urgencyLevel: 'high'
+      reportedBy: req.user._id
     };
 
     // Encrypt panic data
     const encryptedPanic = encryptData(JSON.stringify(panicData));
     const evidenceCID = await uploadToIPFS(encryptedPanic);
 
-    // Add panic record
+    // Calculate priority based on current time (all new panics are critical)
+    const priority = 'critical';
+
+    // Create new Panic record using the Panic model
+    const panic = new Panic({
+      touristId: tourist._id,
+      location: {
+        latitude: lat,
+        longitude: lng
+      },
+      timestamp: new Date(),
+      evidenceCID,
+      onchainStatus: 'pending',
+      reportedBy: req.user._id,
+      priority,
+      status: 'active'
+    });
+
+    await panic.save();
+
+    // Also add to tourist's panics array for backwards compatibility (optional)
     const panicRecord = {
-      location,
+      location: {
+        latitude: lat,
+        longitude: lng
+      },
       timestamp: new Date(),
       evidenceCID,
       onchainStatus: "pending" as "pending"
@@ -326,7 +358,16 @@ export const raisePanic = async (req: Request, res: Response) => {
     res.status(201).json({
       success: true,
       message: 'SOS raised successfully. Emergency services have been notified.',
-      emergencyNumber: '+91-100'
+      emergencyNumber: '+91-100',
+      panicId: panic._id,
+      evidenceCID: panic.evidenceCID,
+      timestamp: panic.timestamp,
+      location: {
+        latitude: lat,
+        longitude: lng
+      },
+      priority: panic.priority,
+      status: panic.status
     });
 
   } catch (error: any) {
@@ -764,92 +805,76 @@ export const getHeatMapData = async (req: Request, res: Response) => {
         break;
     }
 
-    // Build aggregation pipeline for heat map data
-    const pipeline: any[] = [
-      {
-        $match: {
-          updatedAt: { $gte: timeFilter }
-        }
-      }
-    ];
+    // Build match conditions for Panic model
+    const matchConditions: any = {
+      timestamp: { $gte: timeFilter }
+    };
 
     // Add location bounds filter if provided
     if (bounds) {
       const { north, south, east, west } = JSON.parse(bounds as string);
-      pipeline[0].$match['panics.location.latitude'] = { $gte: south, $lte: north };
-      pipeline[0].$match['panics.location.longitude'] = { $gte: west, $lte: east };
+      matchConditions['location.latitude'] = { $gte: south, $lte: north };
+      matchConditions['location.longitude'] = { $gte: west, $lte: east };
     }
 
-    // Unwind panics to get individual location points
-    pipeline.push(
-      { $unwind: { path: '$panics', preserveNullAndEmptyArrays: true } },
+    // Get panic data using the new Panic model
+    const pipeline: any[] = [
+      { $match: matchConditions },
       {
-        $match: {
-          'panics.timestamp': { $gte: timeFilter }
+        $group: {
+          _id: {
+            lat: { $round: ['$location.latitude', 3] }, // Round to ~100m precision
+            lng: { $round: ['$location.longitude', 3] }
+          },
+          count: { $sum: 1 },
+          incidents: { $push: {
+            panicId: '$_id',
+            timestamp: '$timestamp',
+            status: '$status',
+            priority: '$priority',
+            onchainStatus: '$onchainStatus'
+          }}
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          location: {
+            lat: '$_id.lat',
+            lng: '$_id.lng'
+          },
+          intensity: '$count',
+          incidents: '$incidents'
         }
       }
-    );
+    ];
 
-    // Group by location to create clusters
-    pipeline.push({
-      $group: {
-        _id: {
-          lat: { $round: ['$panics.location.latitude', 3] }, // Round to ~100m precision
-          lng: { $round: ['$panics.location.longitude', 3] }
-        },
-        count: { $sum: 1 },
-        incidents: { $push: {
-          touristId: '$touristId',
-          timestamp: '$panics.timestamp',
-          status: '$panics.onchainStatus'
-        }}
-      }
-    });
+    const heatMapPoints = await Panic.aggregate(pipeline);
 
-    // Format output
-    pipeline.push({
-      $project: {
-        _id: 0,
-        location: {
-          lat: '$_id.lat',
-          lng: '$_id.lng'
-        },
-        intensity: '$count',
-        incidents: '$incidents'
-      }
-    });
-
-    const heatMapPoints = await Tourist.aggregate(pipeline);
-
-    // Get additional statistics
-    const stats = await Tourist.aggregate([
+    // Get additional statistics using Panic model
+    const stats = await Panic.aggregate([
       {
         $match: {
-          updatedAt: { $gte: timeFilter }
+          timestamp: { $gte: timeFilter }
         }
       },
       {
         $group: {
           _id: null,
-          totalTourists: { $sum: 1 },
-          activeTourists: {
+          totalPanics: { $sum: 1 },
+          activePanics: {
             $sum: {
-              $cond: [
-                { $and: [
-                  { $eq: ['$isActive', true] },
-                  { $eq: ['$kyc.status', 'verified'] }
-                ]}, 
-                1, 
-                0
-              ]
+              $cond: [{ $eq: ['$status', 'active'] }, 1, 0]
             }
           },
-          sosCount: {
-            $sum: { $size: { $ifNull: ['$panics', []] } }
-          },
-          trackingOptIns: {
+          criticalPanics: {
             $sum: {
-              $cond: [{ $eq: ['$trackingOptIn', true] }, 1, 0]
+              $cond: [{ $eq: ['$priority', 'critical'] }, 1, 0]
+            }
+          },
+          resolvedPanics: {
+            $sum: {
+              $cond: [{ $eq: ['$status', 'resolved'] }, 1, 0]
             }
           }
         }
@@ -860,10 +885,10 @@ export const getHeatMapData = async (req: Request, res: Response) => {
       success: true,
       heatMapData: heatMapPoints,
       statistics: stats[0] || {
-        totalTourists: 0,
-        activeTourists: 0,
-        sosCount: 0,
-        trackingOptIns: 0
+        totalPanics: 0,
+        activePanics: 0,
+        criticalPanics: 0,
+        resolvedPanics: 0
       },
       metadata: {
         timeRange,
@@ -887,88 +912,94 @@ export const getSOSAlerts = async (req: Request, res: Response) => {
   try {
     const { 
       status = 'active', // 'active', 'all', 'resolved'
-      priority = 'all', // 'high', 'medium', 'low', 'all'
+      priority = 'all', // 'critical', 'high', 'medium', 'low', 'all'
       limit = 50 
     } = req.query;
 
-    // Build match conditions
-    const matchConditions: any = {
-      'panics.0': { $exists: true } // Has at least one panic
-    };
+    // Build match conditions for Panic model
+    const matchConditions: any = {};
 
     // Filter by status
     if (status === 'active') {
-      matchConditions['panics.onchainStatus'] = { $in: ['pending', 'submitted'] };
+      matchConditions.status = 'active';
+      matchConditions.onchainStatus = { $in: ['pending', 'submitted'] };
     } else if (status === 'resolved') {
-      matchConditions['panics.onchainStatus'] = 'confirmed';
+      matchConditions.status = 'resolved';
     }
 
-    // Aggregation pipeline to get SOS alerts
-    const pipeline: any[] = [
-      { $match: matchConditions },
-      { $unwind: '$panics' },
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'userId',
-          foreignField: '_id',
-          as: 'userInfo'
-        }
-      },
-      { $unwind: '$userInfo' },
-      {
-        $project: {
-          _id: 1,
-          touristId: 1,
-          fullName: 1,
-          phoneNumber: 1,
-          nationality: 1,
-          profileImage: 1,
-          userEmail: '$userInfo.email',
-          panic: '$panics',
-          kycStatus: '$kyc.status',
-          isActive: 1
-        }
-      },
-      { $sort: { 'panic.timestamp': -1 } },
-      { $limit: parseInt(limit as string) }
-    ];
+    // Filter by priority
+    if (priority !== 'all') {
+      matchConditions.priority = priority;
+    }
 
-    const sosAlerts = await Tourist.aggregate(pipeline);
+    // Get panics with tourist and user information
+    const panics = await Panic.find(matchConditions)
+      .populate({
+        path: 'touristId',
+        populate: {
+          path: 'userId',
+          select: 'name email'
+        }
+      })
+      .populate('reportedBy', 'name email')
+      .sort({ timestamp: -1 })
+      .limit(parseInt(limit as string));
 
-    // Calculate priority based on time and status
-    const enrichedAlerts = sosAlerts.map(alert => {
-      const timeSinceAlert = Date.now() - new Date(alert.panic.timestamp).getTime();
-      const hoursAgo = timeSinceAlert / (1000 * 60 * 60);
+    // Format the response
+    const sosAlerts = panics.map(panic => {
+      const tourist = panic.touristId as any;
+      const user = tourist?.userId as any;
       
-      let priorityLevel = 'low';
-      if (hoursAgo < 1) priorityLevel = 'high';
-      else if (hoursAgo < 6) priorityLevel = 'medium';
+      const timeSinceAlert = Date.now() - new Date(panic.timestamp).getTime();
+      const minutesAgo = timeSinceAlert / (1000 * 60);
+      const hoursAgo = timeSinceAlert / (1000 * 60 * 60);
 
       return {
-        ...alert,
-        priority: priorityLevel,
+        _id: panic._id,
+        touristId: tourist?.touristId || 'N/A',
+        fullName: tourist?.fullName || 'Unknown',
+        phoneNumber: tourist?.phoneNumber || 'N/A',
+        nationality: tourist?.nationality || 'Unknown',
+        profileImage: tourist?.profileImage || null,
+        userEmail: user?.email || 'N/A',
+        panic: {
+          location: {
+            latitude: panic.location.latitude,
+            longitude: panic.location.longitude
+          },
+          timestamp: panic.timestamp,
+          onchainStatus: panic.onchainStatus,
+          evidenceCID: panic.evidenceCID,
+          status: panic.status,
+          respondedBy: panic.respondedBy,
+          responseTime: panic.responseTime,
+          notes: panic.notes
+        },
+        kycStatus: tourist?.kyc?.status || 'pending',
+        isActive: tourist?.isActive || false,
+        priority: panic.priority,
+        minutesAgo: Math.round(minutesAgo),
         hoursAgo: Math.round(hoursAgo * 10) / 10,
-        needsAttention: priorityLevel === 'high' || alert.panic.onchainStatus === 'pending'
+        needsAttention: panic.priority === 'critical' || panic.priority === 'high' || panic.status === 'active',
+        locationString: `${panic.location.latitude.toFixed(4)}, ${panic.location.longitude.toFixed(4)}`
       };
     });
 
-    // Filter by priority if specified
-    let filteredAlerts = enrichedAlerts;
-    if (priority !== 'all') {
-      filteredAlerts = enrichedAlerts.filter(alert => alert.priority === priority);
-    }
+    // Create summary
+    const summary = {
+      total: sosAlerts.length,
+      critical: sosAlerts.filter(a => a.priority === 'critical').length,
+      high: sosAlerts.filter(a => a.priority === 'high').length,
+      medium: sosAlerts.filter(a => a.priority === 'medium').length,
+      low: sosAlerts.filter(a => a.priority === 'low').length,
+      needingAttention: sosAlerts.filter(a => a.needsAttention).length,
+      recentAlerts: sosAlerts.filter(a => a.minutesAgo < 60).length
+    };
 
     res.json({
       success: true,
-      sosAlerts: filteredAlerts,
-      summary: {
-        total: filteredAlerts.length,
-        high: filteredAlerts.filter(a => a.priority === 'high').length,
-        medium: filteredAlerts.filter(a => a.priority === 'medium').length,
-        low: filteredAlerts.filter(a => a.priority === 'low').length,
-        needingAttention: filteredAlerts.filter(a => a.needsAttention).length
-      }
+      sosAlerts,
+      summary
     });
 
   } catch (error: any) {
