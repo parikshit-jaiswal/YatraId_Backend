@@ -7,8 +7,6 @@ export interface IPanic extends Document {
     longitude: number;
   };
   timestamp: Date;
-  evidenceCID: string;
-  onchainStatus: 'pending' | 'submitted' | 'confirmed' | 'failed';
   reportedBy: mongoose.Types.ObjectId;
   priority: 'low' | 'medium' | 'high' | 'critical';
   status: 'active' | 'resolved' | 'investigating';
@@ -33,15 +31,6 @@ const PanicSchema = new Schema<IPanic>({
     type: Date,
     required: true,
     default: Date.now
-  },
-  evidenceCID: {
-    type: String,
-    required: true
-  },
-  onchainStatus: {
-    type: String,
-    enum: ['pending', 'submitted', 'confirmed', 'failed'],
-    default: 'pending'
   },
   reportedBy: {
     type: Schema.Types.ObjectId,

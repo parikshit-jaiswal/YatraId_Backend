@@ -256,7 +256,7 @@ export const updateTourist = async (req: Request, res: Response) => {
   }
 };
 
-// Raise panic/SOS - SIMPLIFIED (NO ONCHAIN INFO)
+// Raise panic/SOS - SIMPLIFIED (NO EVIDENCE REQUIRED)
 export const raisePanic = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -285,7 +285,7 @@ export const raisePanic = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    // Create SIMPLE panic record - NO ENCRYPTION, NO IPFS, NO ONCHAIN
+    // Create panic record (no evidence required)
     const panic = new Panic({
       touristId: tourist._id,
       location: {
