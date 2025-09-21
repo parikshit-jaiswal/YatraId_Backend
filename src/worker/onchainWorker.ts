@@ -142,11 +142,13 @@ class OnchainWorker {
               );
 
             } else if (txItem.action === "panic") {
-              tx = await this.contract.raiseSOS(
-                tourist.touristIdOnChain,
-                txItem.cid,
-                { gasLimit: 400000 }
-              );
+              // REMOVED: Panic transactions are no longer processed on blockchain
+              console.log(`⚠️  Skipping panic transaction - panics are now handled off-chain only`);
+              txItem.status = "confirmed";
+              txItem.updatedAt = new Date();
+              await tourist.save();
+              console.log(`✅ Panic transaction marked as completed (off-chain)`);
+              continue;
 
             } else if (txItem.action === "score") {
               tx = await this.contract.pushScore(
@@ -181,15 +183,6 @@ class OnchainWorker {
               if (receipt && receipt.status === 1) {
                 txItem.status = "confirmed";
                 txItem.updatedAt = new Date();
-                
-                // Update panic status if it's a panic transaction
-                if (txItem.action === "panic" && tourist.panics) {
-                  const panic = tourist.panics.find(p => p.evidenceCID === txItem.cid);
-                  if (panic) {
-                    panic.onchainStatus = "confirmed";
-                  }
-                }
-                
                 await tourist.save();
                 console.log(`🎉 Transaction confirmed: ${tx.hash}`);
               } else {
@@ -203,15 +196,6 @@ class OnchainWorker {
             txItem.status = "failed";
             txItem.error = error.message || "Unknown error";
             txItem.updatedAt = new Date();
-            
-            // Update panic status if it's a panic transaction
-            if (txItem.action === "panic" && tourist.panics) {
-              const panic = tourist.panics.find(p => p.evidenceCID === txItem.cid);
-              if (panic) {
-                panic.onchainStatus = "failed";
-              }
-            }
-            
             await tourist.save();
           }
         }

@@ -51,16 +51,19 @@ export interface ITourist extends Document {
   trackingOptIn: boolean;
   isActive: boolean; // Can use tourist services
 
-  // Emergency & Safety
+  // Emergency & Safety - Updated to match Panic model
   panics: Array<{
     location: {
       latitude: number;
       longitude: number;
-      address?: string;
     };
     timestamp: Date;
-    evidenceCID: string;
-    onchainStatus: "pending" | "submitted" | "confirmed" | "failed";
+    reportedBy: mongoose.Types.ObjectId;
+    priority: 'low' | 'medium' | 'high' | 'critical';
+    status: 'active' | 'resolved' | 'investigating';
+    respondedBy?: mongoose.Types.ObjectId;
+    responseTime?: Date;
+    notes?: string;
   }>;
 
   // Family Relationships (reverse lookup)
@@ -147,21 +150,35 @@ const TouristSchema = new Schema<ITourist>(
     trackingOptIn: { type: Boolean, default: false },
     isActive: { type: Boolean, default: false }, // Active after KYC verification
 
-    // Emergency & Safety
+    // Emergency & Safety - Updated schema to match Panic model
     panics: [
       {
         location: {
           latitude: { type: Number, required: true },
-          longitude: { type: Number, required: true },
-          address: String,
+          longitude: { type: Number, required: true }
         },
         timestamp: { type: Date, default: Date.now },
-        evidenceCID: String,
-        onchainStatus: {
-          type: String,
-          enum: ["pending", "submitted", "confirmed", "failed"],
-          default: "pending",
+        reportedBy: {
+          type: Schema.Types.ObjectId,
+          ref: 'User',
+          required: true
         },
+        priority: {
+          type: String,
+          enum: ['low', 'medium', 'high', 'critical'],
+          default: 'high'
+        },
+        status: {
+          type: String,
+          enum: ['active', 'resolved', 'investigating'],
+          default: 'active'
+        },
+        respondedBy: {
+          type: Schema.Types.ObjectId,
+          ref: 'User'
+        },
+        responseTime: Date,
+        notes: String
       },
     ],
 
