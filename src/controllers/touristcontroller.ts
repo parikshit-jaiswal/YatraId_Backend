@@ -438,7 +438,7 @@ export const getDashboard = async (req: Request, res: Response) => {
     }
 
     // Get tourist profile
-    const tourist = await Tourist.findOne({ userId }).select('touristId profileImage qrCodeData').lean();
+    const tourist = await Tourist.findOne({ userId }).select('touristId profileImage qrCodeData _id').lean();
 
     if (!tourist) {
       return res.json({
@@ -464,6 +464,7 @@ export const getDashboard = async (req: Request, res: Response) => {
       touristId: tourist.touristId || null,
       profileImage: tourist.profileImage || null,
       qrUrl: qrUrl,
+      touristMongoId: tourist._id, // <-- Tourist MongoDB ID added here
       message: tourist.touristId ? 'Profile active' : 'Profile created, Tourist ID pending'
     });
 
