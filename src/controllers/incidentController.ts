@@ -101,20 +101,43 @@ export const reportIncident = async (req: AuthRequest, res: Response) => {
 
     await incident.save();
 
-    // Add panic record to tourist if it's an emergency
+    // Add panic record to tourist if it's an emergency - UPDATED TO MATCH NEW SCHEMA
     if (['assault', 'theft', 'medical', 'accident'].includes(type)) {
       if (!tourist.panics) {
         tourist.panics = [];
       }
       
+      // Map incident severity to panic priority
+      const getPanicPriority = (incidentSeverity: string): 'low' | 'medium' | 'high' | 'critical' => {
+        switch (incidentSeverity.toLowerCase()) {
+          case 'critical':
+            return 'critical';
+          case 'high':
+            return 'high';
+          case 'medium':
+            return 'medium';
+          case 'low':
+            return 'low';
+          default:
+            return 'high'; // Default to high for emergencies
+        }
+      };
+
+      // Add panic using the new Tourist model schema (matching Panic model structure)
       tourist.panics.push({
-        location,
+        location: {
+          latitude: location.latitude,
+          longitude: location.longitude
+        },
         timestamp: new Date(dateTime),
-        evidenceCID,
-        onchainStatus: 'pending'
+        reportedBy: req.user._id, // Current user reporting the incident
+        priority: getPanicPriority(severity),
+        status: 'active', // Start as active
+        notes: `Incident reported: ${type} - ${description.substring(0, 100)}...`
       });
 
       await tourist.save();
+      console.log(`🚨 Emergency panic added to tourist ${tourist.touristId} for incident ${incidentId}`);
     }
 
     console.log(`🚨 New incident reported: ${incidentId} for tourist: ${tourist.touristId}`);
@@ -132,7 +155,7 @@ export const reportIncident = async (req: AuthRequest, res: Response) => {
         evidenceCID
       },
       message: 'Incident reported successfully. Police will be assigned shortly.',
-      emergencyContact: type in ['assault', 'medical', 'accident'] ? '+91-100' : '+91-1073'
+      emergencyContact: ['assault', 'medical', 'accident'].includes(type) ? '+91-100' : '+91-1073'
     });
 
   } catch (error: any) {
@@ -218,6 +241,35 @@ export const updateIncidentStatus = async (req: AuthRequest, res: Response) => {
         takenBy: req.user?.name || 'System',
         timestamp: new Date()
       });
+    }
+
+    // UPDATED: Also update related panic status in Tourist model
+    if (status === 'resolved') {
+      try {
+        const tourist = await Tourist.findById(incident.touristId);
+        if (tourist && tourist.panics && tourist.panics.length > 0) {
+          // Find and update related panic record
+          const relatedPanic = tourist.panics.find(panic => {
+            const panicTime = new Date(panic.timestamp).getTime();
+            const incidentTime = new Date(incident.dateTime).getTime();
+            const timeDiff = Math.abs(panicTime - incidentTime);
+            // If panic was created within 1 hour of incident, consider it related
+            return timeDiff <= 3600000; // 1 hour in milliseconds
+          });
+
+          if (relatedPanic) {
+            relatedPanic.status = 'resolved';
+            relatedPanic.responseTime = new Date();
+            relatedPanic.respondedBy = req.user._id;
+            relatedPanic.notes = `Resolved via incident ${incidentId}: ${actionNote || 'Case closed'}`;
+            await tourist.save();
+            console.log(`✅ Updated related panic status to resolved for tourist ${tourist.touristId}`);
+          }
+        }
+      } catch (panicUpdateError) {
+        console.error('Error updating related panic status:', panicUpdateError);
+        // Don't fail the main incident update if panic update fails
+      }
     }
 
     incident.updatedAt = new Date();

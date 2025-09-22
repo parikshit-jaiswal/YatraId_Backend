@@ -7,6 +7,7 @@ import { ethers } from 'ethers';
 import cloudinary from '../config/cloudinary';
 import RestrictedZone from '../models/RestrictedZone';
 import Panic from '../models/Panic';
+import mongoose from 'mongoose';
 
 // Register a new tourist
 export const registerTourist = async (req: Request, res: Response) => {
@@ -256,11 +257,16 @@ export const updateTourist = async (req: Request, res: Response) => {
   }
 };
 
-// Raise panic/SOS - SIMPLIFIED (NO ONCHAIN INFO)
+// Raise panic/SOS - SIMPLIFIED (NO EVIDENCE REQUIRED)
 export const raisePanic = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { location } = req.body;
+
+    // Validate authenticated user exists
+    if (!req.user?._id) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
 
     // Validate location has latitude and longitude
     if (!location || !location.latitude || !location.longitude) {
@@ -275,47 +281,103 @@ export const raisePanic = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Invalid latitude or longitude coordinates' });
     }
 
-    const tourist = await Tourist.findById(id).lean();
+    const tourist = await Tourist.findById(id);
     if (!tourist) {
       return res.status(404).json({ error: 'Tourist not found' });
     }
 
     // Authorization check
-    if (tourist.userId.toString() !== req.user?._id.toString()) {
+    if (tourist.userId.toString() !== req.user._id.toString()) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    // Create SIMPLE panic record - NO ENCRYPTION, NO IPFS, NO ONCHAIN
+    // Get current timestamp for consistent timing
+    const currentTimestamp = new Date();
+
+    // Ensure we have a proper ObjectId - explicit conversion
+    const reportedByUserId = new mongoose.Types.ObjectId(req.user._id.toString());
+    console.log('📝 Converted reportedBy ObjectId:', reportedByUserId);
+    console.log('📝 reportedBy type:', typeof reportedByUserId);
+
+    // Create panic record (no evidence required)
     const panic = new Panic({
       touristId: tourist._id,
       location: {
         latitude: lat,
         longitude: lng
       },
-      timestamp: new Date(),
-      reportedBy: req.user._id,
+      timestamp: currentTimestamp,
+      reportedBy: reportedByUserId,
       priority: 'critical',
       status: 'active'
     });
 
     await panic.save();
+    console.log('✅ Panic record saved successfully');
+
+    // Ensure we initialize panics array if it doesn't exist
+    if (!tourist.panics) {
+      tourist.panics = [];
+    }
+
+    // Create the panic object with explicit ObjectId conversion
+    const newPanicEntry = {
+      location: {
+        latitude: lat,
+        longitude: lng
+      },
+      timestamp: currentTimestamp,
+      reportedBy: reportedByUserId, // Using the converted ObjectId
+      priority: 'critical' as const,
+      status: 'active' as const
+    };
+
+    console.log('📝 New panic entry before push:', newPanicEntry);
+    console.log('📝 reportedBy in entry:', newPanicEntry.reportedBy);
+    console.log('📝 reportedBy type in entry:', typeof newPanicEntry.reportedBy);
+
+    // Add panic to tourist's panics array
+    tourist.panics.push(newPanicEntry);
+
+    // Update tourist record
+    tourist.updatedAt = new Date();
+    
+    console.log('📝 About to save tourist with panic data');
+    console.log('📝 Tourist panics array length:', tourist.panics.length);
+    console.log('📝 Last panic reportedBy:', tourist.panics[tourist.panics.length - 1]?.reportedBy);
+    
+    await tourist.save();
+    console.log('✅ Tourist record updated successfully');
 
     res.status(201).json({
       success: true,
       message: 'SOS raised successfully. Emergency services have been notified.',
       emergencyNumber: '+91-100',
       panicId: panic._id,
-      timestamp: panic.timestamp,
+      timestamp: currentTimestamp,
       location: {
         latitude: lat,
         longitude: lng
       },
       priority: panic.priority,
-      status: panic.status
+      status: panic.status,
+      reportedBy: req.user.name || req.user.email || 'Self'
     });
 
   } catch (error: any) {
     console.error('Raise panic error:', error);
+    
+    if (error.name === 'ValidationError') {
+      console.error('📋 Validation Error Details:');
+      console.error('- Error message:', error.message);
+      console.error('- Errors object:', error.errors);
+      console.error('- req.user at error time:', req.user);
+      
+      // Log more details about the tourist object
+      // console.error('- Tourist panics array:', tourist?.panics);
+      // console.error('- Last panic entry:', tourist?.panics?.[tourist.panics.length - 1]);
+    }
+    
     res.status(500).json({ 
       error: 'Internal server error',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
@@ -438,7 +500,7 @@ export const getDashboard = async (req: Request, res: Response) => {
     }
 
     // Get tourist profile
-    const tourist = await Tourist.findOne({ userId }).select('touristId profileImage qrCodeData').lean();
+    const tourist = await Tourist.findOne({ userId }).select('touristId profileImage qrCodeData _id').lean();
 
     if (!tourist) {
       return res.json({
@@ -464,6 +526,7 @@ export const getDashboard = async (req: Request, res: Response) => {
       touristId: tourist.touristId || null,
       profileImage: tourist.profileImage || null,
       qrUrl: qrUrl,
+      touristMongoId: tourist._id, // <-- Tourist MongoDB ID added here
       message: tourist.touristId ? 'Profile active' : 'Profile created, Tourist ID pending'
     });
 
