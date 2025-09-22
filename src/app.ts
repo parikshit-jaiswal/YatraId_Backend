@@ -3,7 +3,7 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import dotenv from "dotenv";
 import { createServer } from "http";
-import { Server } from "socket.io";
+import SocketService from "./sockets";
 
 // Import routes
 import authRoutes from "./routes/auth.routes";
@@ -12,6 +12,7 @@ import kycRoutes from "./routes/kyc.routes";
 import incidentRoutes from "./routes/incident.routes";
 import familyRoutes from "./routes/family.routes";
 import locationRoutes from "./routes/location.routes";
+import locationSocketRoutes from "./routes/location.socket.routes";
 import testRoutes from "./routes/test.routes";
 
 // Load environment variables
@@ -19,22 +20,16 @@ dotenv.config();
 
 const app = express();
 const httpServer = createServer(app);
-const io = new Server(httpServer, {
-  cors: {
-    origin: process.env.CORS_ORIGIN || "http://localhost:3000",
-    methods: ["GET", "POST"],
-    credentials: true,
-  },
-});
 
-// Socket.io connection handling
-io.on("connection", (socket) => {
-  console.log(`User connected: ${socket.id}`);
+// Initialize Socket.IO service
+const socketService = new SocketService(httpServer);
+const io = socketService.getIO();
 
-  socket.on("disconnect", () => {
-    console.log(`User disconnected: ${socket.id}`);
-  });
-});
+// Make socket service available globally
+declare global {
+  var socketService: SocketService;
+}
+global.socketService = socketService;
 
 // CORS configuration
 const corsOptions = {
@@ -57,7 +52,8 @@ app.use("/api/tourists", touristRoutes);
 app.use("/api/kyc", kycRoutes);
 app.use("/api/incidents", incidentRoutes);
 app.use("/api/family", familyRoutes);
-app.use("/api/locations", locationRoutes);
+app.use("/api/locations", locationSocketRoutes); // Socket-enabled location routes
+app.use("/api/locations/legacy", locationRoutes); // Legacy location routes
 app.use("/api", testRoutes);
 
 // Health check endpoint
@@ -145,7 +141,7 @@ app.use((req: Request, res: Response) => {
     method: req.method,
     availableRoutes: [
       "/api/auth",
-      "/api/tourists", // <-- Changed from "/api/tourist" to "/api/tourists"
+      "/api/tourists", 
       "/api/kyc",
       "/api/incidents",
       "/api/family",
@@ -155,4 +151,4 @@ app.use((req: Request, res: Response) => {
 });
 
 // Export using CommonJS syntax
-export { app, io, httpServer };
+export { app, io, httpServer, socketService };
